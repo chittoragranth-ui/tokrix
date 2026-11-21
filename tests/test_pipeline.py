@@ -1,6 +1,7 @@
 import pytest
 
 from tokrix.budget.adaptive import BudgetMode
+from tokrix.decision import Action
 from tokrix.execution import ExecutionRequest, ExecutionResponse
 from tokrix.pipeline import PipelineResult, TokrixPipeline
 from tokrix.routing.router import ModelTier
@@ -19,6 +20,17 @@ class FakeProvider:
 class FailingProvider:
     def execute(self, request: ExecutionRequest) -> ExecutionResponse:
         raise RuntimeError("provider failed")
+
+
+class SequenceProvider:
+    def __init__(self, responses: list[str]) -> None:
+        self.responses = responses
+        self.call_count = 0
+
+    def execute(self, request: ExecutionRequest) -> ExecutionResponse:
+        index = min(self.call_count, len(self.responses) - 1)
+        self.call_count += 1
+        return ExecutionResponse(content=self.responses[index])
 
 
 def test_successful_end_to_end_pipeline() -> None:
@@ -41,6 +53,136 @@ def test_successful_end_to_end_pipeline() -> None:
     assert result.verification_result.passed is True
     assert len(result.verification_result.checks) == 4
     assert result.verification_result.issues == []
+
+
+def test_initial_failure_retries_same_tier_then_succeeds() -> None:
+    low = SequenceProvider([" ", "low success"])
+    pipeline = TokrixPipeline({ModelTier.LOW: low})
+
+    result = pipeline.run("Hello.", BudgetMode.COST_OPTIMIZED)
+
+    assert low.call_count == 2
+    assert result.response.content == "low success"
+    assert result.final_tier is ModelTier.LOW
+    assert result.final_decision is not None
+    assert result.final_decision.action is Action.ACCEPT
+    assert [attempt.model_tier for attempt in result.attempt_history or []] == [
+        ModelTier.LOW,
+        ModelTier.LOW,
+    ]
+
+
+def test_same_tier_retries_exhausted_escalates_then_succeeds() -> None:
+    low = SequenceProvider([" ", " "])
+    medium = SequenceProvider(["medium success"])
+    pipeline = TokrixPipeline(
+        {ModelTier.LOW: low, ModelTier.MEDIUM: medium}
+    )
+
+    result = pipeline.run("Hello.", BudgetMode.COST_OPTIMIZED)
+
+    assert low.call_count == 2
+    assert medium.call_count == 1
+    assert result.response.content == "medium success"
+    assert result.final_tier is ModelTier.MEDIUM
+    assert result.final_decision is not None
+    assert result.final_decision.action is Action.ACCEPT
+
+
+def test_low_medium_high_escalation_ends_at_high() -> None:
+    low = SequenceProvider([" "])
+    medium = SequenceProvider([" "])
+    high = SequenceProvider(["high success"])
+    pipeline = TokrixPipeline(
+        {
+            ModelTier.LOW: low,
+            ModelTier.MEDIUM: medium,
+            ModelTier.HIGH: high,
+        }
+    )
+
+    result = pipeline.run("Hello.", BudgetMode.COST_OPTIMIZED)
+
+    assert low.call_count == 2
+    assert medium.call_count == 2
+    assert high.call_count == 1
+    assert result.final_tier is ModelTier.HIGH
+    assert result.response.content == "high success"
+    assert result.verification_result is not None
+    assert result.verification_result.passed is True
+    assert result.final_decision is not None
+    assert result.final_decision.action is Action.ACCEPT
+
+
+def test_all_tiers_fail_stops_at_high() -> None:
+    low = SequenceProvider([" "])
+    medium = SequenceProvider([" "])
+    high = SequenceProvider([" "])
+    pipeline = TokrixPipeline(
+        {
+            ModelTier.LOW: low,
+            ModelTier.MEDIUM: medium,
+            ModelTier.HIGH: high,
+        }
+    )
+
+    result = pipeline.run("Hello.", BudgetMode.COST_OPTIMIZED)
+
+    assert low.call_count == 2
+    assert medium.call_count == 2
+    assert high.call_count == 2
+    assert result.final_tier is ModelTier.HIGH
+    assert result.final_decision is not None
+    assert result.final_decision.action is Action.STOP
+    assert result.verification_result is not None
+    assert result.verification_result.passed is False
+
+
+def test_max_retries_zero_escalates_without_same_tier_retry() -> None:
+    low = SequenceProvider([" "])
+    medium = SequenceProvider(["medium success"])
+    pipeline = TokrixPipeline(
+        {ModelTier.LOW: low, ModelTier.MEDIUM: medium}
+    )
+
+    result = pipeline.run(
+        "Hello.",
+        BudgetMode.COST_OPTIMIZED,
+        max_retries=0,
+    )
+
+    assert low.call_count == 1
+    assert medium.call_count == 1
+    assert result.final_tier is ModelTier.MEDIUM
+
+
+def test_max_retries_two_allows_two_same_tier_retries() -> None:
+    low = SequenceProvider([" ", " ", "low success"])
+    pipeline = TokrixPipeline({ModelTier.LOW: low})
+
+    result = pipeline.run(
+        "Hello.",
+        BudgetMode.COST_OPTIMIZED,
+        max_retries=2,
+    )
+
+    assert low.call_count == 3
+    assert result.response.content == "low success"
+    assert result.final_decision is not None
+    assert result.final_decision.action is Action.ACCEPT
+
+
+def test_missing_escalation_provider_stops_safely() -> None:
+    low = SequenceProvider([" ", " "])
+    pipeline = TokrixPipeline({ModelTier.LOW: low})
+
+    result = pipeline.run("Hello.", BudgetMode.COST_OPTIMIZED)
+
+    assert result.final_decision is not None
+    assert result.final_decision.action is Action.STOP
+    assert "MEDIUM" in result.final_decision.reason
+    assert "no MEDIUM provider" in result.final_decision.reason
+    assert result.final_tier is ModelTier.LOW
 
 
 def test_pipeline_includes_failed_verification_for_blank_response() -> None:
@@ -153,6 +295,22 @@ def test_invalid_mode_is_rejected() -> None:
 
     with pytest.raises(TypeError, match="mode must be a BudgetMode"):
         pipeline.run("Hello.", "balanced")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("max_retries", [-1, -10])
+def test_negative_max_retries_is_rejected(max_retries: int) -> None:
+    pipeline = TokrixPipeline({ModelTier.LOW: FakeProvider()})
+
+    with pytest.raises(ValueError, match="max_retries must be non-negative"):
+        pipeline.run("Hello.", BudgetMode.BALANCED, max_retries)
+
+
+@pytest.mark.parametrize("max_retries", [True, False])
+def test_bool_max_retries_is_rejected(max_retries: bool) -> None:
+    pipeline = TokrixPipeline({ModelTier.LOW: FakeProvider()})
+
+    with pytest.raises(TypeError, match="max_retries must be an integer"):
+        pipeline.run("Hello.", BudgetMode.BALANCED, max_retries)
 
 
 @pytest.mark.parametrize("providers", [[], "low"])

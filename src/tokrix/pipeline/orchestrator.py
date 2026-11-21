@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from tokrix.budget.adaptive import BudgetDecision, BudgetMode, allocate_budget
+from tokrix.decision.engine import Action, DecisionResult, decide_action
 from tokrix.execution.engine import (
     ExecutionEngine,
     ExecutionRequest,
@@ -21,6 +22,26 @@ from tokrix.verification.verifier import VerificationResult, verify_response
 
 
 @dataclass
+class PipelineAttempt:
+    """One model execution attempt within a pipeline run."""
+
+    attempt_number: int
+    model_tier: ModelTier
+    verification_result: VerificationResult
+    decision: DecisionResult
+
+    @property
+    def decision_taken(self) -> Action:
+        """The action selected for this attempt."""
+        return self.decision.action
+
+    @property
+    def decision_reason(self) -> str:
+        """The explanation for this attempt's decision."""
+        return self.decision.reason
+
+
+@dataclass
 class PipelineResult:
     """Structured decision data and response returned by a pipeline run."""
 
@@ -32,6 +53,8 @@ class PipelineResult:
     routing_decision: RoutingDecision
     selected_tier: ModelTier
     verification_result: VerificationResult | None = None
+    attempt_history: list[PipelineAttempt] | None = None
+    final_decision: DecisionResult | None = None
 
     @property
     def execution_response(self) -> ExecutionResponse:
@@ -52,6 +75,16 @@ class PipelineResult:
     def tier(self) -> ModelTier:
         """Alias for the selected model tier."""
         return self.selected_tier
+
+    @property
+    def final_tier(self) -> ModelTier:
+        """Final tier that was selected or executed."""
+        return self.selected_tier
+
+    @property
+    def final_verification(self) -> VerificationResult | None:
+        """Verification result from the final execution attempt."""
+        return self.verification_result
 
 
 class TokrixPipeline:
@@ -76,6 +109,7 @@ class TokrixPipeline:
         self,
         prompt: str,
         mode: BudgetMode = BudgetMode.BALANCED,
+        max_retries: int = 1,
     ) -> PipelineResult:
         """Run the complete deterministic Tokrix pipeline for a prompt."""
         if not isinstance(prompt, str):
@@ -84,6 +118,10 @@ class TokrixPipeline:
             raise ValueError("prompt must not be empty or whitespace-only")
         if not isinstance(mode, BudgetMode):
             raise TypeError("mode must be a BudgetMode")
+        if not isinstance(max_retries, int) or isinstance(max_retries, bool):
+            raise TypeError("max_retries must be an integer")
+        if max_retries < 0:
+            raise ValueError("max_retries must be non-negative")
 
         complexity = analyze_complexity(prompt)
         classification = classify_task(prompt)
@@ -103,10 +141,69 @@ class TokrixPipeline:
                 f"No provider configured for the {tier.value.upper()} model tier"
             )
 
-        response = ExecutionEngine(provider).execute(
-            ExecutionRequest(prompt=prompt)
-        )
-        verification = verify_response(response)
+        attempt_history: list[PipelineAttempt] = []
+        retry_count = 0
+        final_decision: DecisionResult | None = None
+        response: ExecutionResponse
+        verification: VerificationResult
+
+        while True:
+            response = ExecutionEngine(provider).execute(
+                ExecutionRequest(prompt=prompt)
+            )
+            verification = verify_response(response)
+            decision = decide_action(
+                verification,
+                tier,
+                retry_count=retry_count,
+                max_retries=max_retries,
+            )
+            attempt_history.append(
+                PipelineAttempt(
+                    attempt_number=len(attempt_history) + 1,
+                    model_tier=tier,
+                    verification_result=verification,
+                    decision=decision,
+                )
+            )
+
+            if decision.action is Action.ACCEPT:
+                final_decision = decision
+                break
+            if decision.action is Action.RETRY:
+                retry_count += 1
+                continue
+            if decision.action is Action.ESCALATE:
+                next_tier = decision.next_tier
+                if next_tier is None:
+                    final_decision = DecisionResult(
+                        action=Action.STOP,
+                        current_tier=tier,
+                        next_tier=None,
+                        reason=f"Escalation from {tier.value.upper()} stopped.",
+                    )
+                    break
+                next_provider = self._providers.get(next_tier)
+                if next_provider is None:
+                    final_decision = DecisionResult(
+                        action=Action.STOP,
+                        current_tier=tier,
+                        next_tier=None,
+                        reason=(
+                            f"Escalation from {tier.value.upper()} to "
+                            f"{next_tier.value.upper()} stopped because no "
+                            f"{next_tier.value.upper()} provider is configured."
+                        ),
+                    )
+                    break
+                tier = next_tier
+                provider = next_provider
+                retry_count = 0
+                continue
+
+            final_decision = decision
+            break
+
         return PipelineResult(
             response=response,
             complexity_result=complexity,
@@ -116,4 +213,6 @@ class TokrixPipeline:
             routing_decision=routing,
             selected_tier=tier,
             verification_result=verification,
+            attempt_history=attempt_history,
+            final_decision=final_decision,
         )
