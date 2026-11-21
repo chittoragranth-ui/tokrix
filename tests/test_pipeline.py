@@ -37,6 +37,22 @@ def test_successful_end_to_end_pipeline() -> None:
     assert result.selected_tier is ModelTier.LOW
     assert low.received_request is not None
     assert low.received_request.prompt == "Hello there."
+    assert result.verification_result is not None
+    assert result.verification_result.passed is True
+    assert len(result.verification_result.checks) == 4
+    assert result.verification_result.issues == []
+
+
+def test_pipeline_includes_failed_verification_for_blank_response() -> None:
+    pipeline = TokrixPipeline({ModelTier.LOW: FakeProvider(" \t\n ")})
+
+    result = pipeline.run("Hello.", BudgetMode.COST_OPTIMIZED)
+
+    assert result.verification_result.passed is False
+    assert (
+        "Response content is empty or whitespace-only."
+        in result.verification_result.issues
+    )
 
 
 def test_pipeline_uses_real_complexity_classifier_estimator_and_budget() -> None:

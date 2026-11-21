@@ -17,6 +17,7 @@ from tokrix.intelligence.classifier import (
 from tokrix.intelligence.complexity import ComplexityResult, analyze_complexity
 from tokrix.intelligence.token_estimator import estimate_tokens
 from tokrix.routing.router import ModelTier, RoutingDecision, route_model
+from tokrix.verification.verifier import VerificationResult, verify_response
 
 
 @dataclass
@@ -30,6 +31,7 @@ class PipelineResult:
     budget_decision: BudgetDecision
     routing_decision: RoutingDecision
     selected_tier: ModelTier
+    verification_result: VerificationResult | None = None
 
     @property
     def execution_response(self) -> ExecutionResponse:
@@ -104,6 +106,7 @@ class TokrixPipeline:
         response = ExecutionEngine(provider).execute(
             ExecutionRequest(prompt=prompt)
         )
+        verification = verify_response(response)
         return PipelineResult(
             response=response,
             complexity_result=complexity,
@@ -112,4 +115,5 @@ class TokrixPipeline:
             budget_decision=budget,
             routing_decision=routing,
             selected_tier=tier,
+            verification_result=verification,
         )
