@@ -1,5 +1,6 @@
 """Unified orchestration for Tokrix prompt analysis and execution."""
 
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -21,6 +22,24 @@ from tokrix.routing.router import ModelTier, RoutingDecision, route_model
 from tokrix.verification.verifier import VerificationResult, verify_response
 
 
+class _TimedProvider:
+    """Measure only the underlying provider's execute call."""
+
+    def __init__(self, provider: ModelProvider) -> None:
+        self._provider = provider
+        self.execution_latency_ms = 0.0
+
+    def execute(self, request: ExecutionRequest) -> ExecutionResponse:
+        started = time.perf_counter()
+        try:
+            return self._provider.execute(request)
+        finally:
+            self.execution_latency_ms = max(
+                0.0,
+                (time.perf_counter() - started) * 1000,
+            )
+
+
 @dataclass
 class PipelineAttempt:
     """One model execution attempt within a pipeline run."""
@@ -29,6 +48,7 @@ class PipelineAttempt:
     model_tier: ModelTier
     verification_result: VerificationResult
     decision: DecisionResult
+    execution_latency_ms: float = 0.0
 
     @property
     def decision_taken(self) -> Action:
@@ -55,6 +75,7 @@ class PipelineResult:
     verification_result: VerificationResult | None = None
     attempt_history: list[PipelineAttempt] | None = None
     final_decision: DecisionResult | None = None
+    total_duration_ms: float = 0.0
 
     @property
     def execution_response(self) -> ExecutionResponse:
@@ -112,6 +133,7 @@ class TokrixPipeline:
         max_retries: int = 1,
     ) -> PipelineResult:
         """Run the complete deterministic Tokrix pipeline for a prompt."""
+        pipeline_started = time.perf_counter()
         if not isinstance(prompt, str):
             raise TypeError("prompt must be a string")
         if not prompt.strip():
@@ -148,7 +170,8 @@ class TokrixPipeline:
         verification: VerificationResult
 
         while True:
-            response = ExecutionEngine(provider).execute(
+            timed_provider = _TimedProvider(provider)
+            response = ExecutionEngine(timed_provider).execute(
                 ExecutionRequest(prompt=prompt)
             )
             verification = verify_response(response)
@@ -164,6 +187,7 @@ class TokrixPipeline:
                     model_tier=tier,
                     verification_result=verification,
                     decision=decision,
+                    execution_latency_ms=timed_provider.execution_latency_ms,
                 )
             )
 
@@ -204,6 +228,10 @@ class TokrixPipeline:
             final_decision = decision
             break
 
+        total_duration_ms = max(
+            0.0,
+            (time.perf_counter() - pipeline_started) * 1000,
+        )
         return PipelineResult(
             response=response,
             complexity_result=complexity,
@@ -215,4 +243,5 @@ class TokrixPipeline:
             verification_result=verification,
             attempt_history=attempt_history,
             final_decision=final_decision,
+            total_duration_ms=total_duration_ms,
         )

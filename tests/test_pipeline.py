@@ -3,7 +3,7 @@ import pytest
 from tokrix.budget.adaptive import BudgetMode
 from tokrix.decision import Action
 from tokrix.execution import ExecutionRequest, ExecutionResponse
-from tokrix.pipeline import PipelineResult, TokrixPipeline
+from tokrix.pipeline import PipelineResult, TokrixPipeline, orchestrator
 from tokrix.routing.router import ModelTier
 
 
@@ -53,6 +53,12 @@ def test_successful_end_to_end_pipeline() -> None:
     assert result.verification_result.passed is True
     assert len(result.verification_result.checks) == 4
     assert result.verification_result.issues == []
+    assert isinstance(result.total_duration_ms, (int, float))
+    assert result.total_duration_ms >= 0
+    assert result.attempt_history is not None
+    assert len(result.attempt_history) == 1
+    assert isinstance(result.attempt_history[0].execution_latency_ms, (int, float))
+    assert result.attempt_history[0].execution_latency_ms >= 0
 
 
 def test_initial_failure_retries_same_tier_then_succeeds() -> None:
@@ -66,10 +72,32 @@ def test_initial_failure_retries_same_tier_then_succeeds() -> None:
     assert result.final_tier is ModelTier.LOW
     assert result.final_decision is not None
     assert result.final_decision.action is Action.ACCEPT
-    assert [attempt.model_tier for attempt in result.attempt_history or []] == [
+    attempts = result.attempt_history or []
+    assert [attempt.model_tier for attempt in attempts] == [
         ModelTier.LOW,
         ModelTier.LOW,
     ]
+    assert all(
+        isinstance(attempt.execution_latency_ms, (int, float))
+        and attempt.execution_latency_ms >= 0
+        for attempt in attempts
+    )
+    assert result.total_duration_ms >= 0
+
+
+def test_timing_measures_provider_calls_and_entire_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    timestamps = iter([1.0, 2.0, 2.003, 3.0, 3.004, 5.0])
+    monkeypatch.setattr(orchestrator.time, "perf_counter", lambda: next(timestamps))
+    pipeline = TokrixPipeline({ModelTier.LOW: SequenceProvider([" ", "success"])})
+
+    result = pipeline.run("Hello.", BudgetMode.COST_OPTIMIZED)
+
+    assert result.attempt_history is not None
+    assert result.attempt_history[0].execution_latency_ms == pytest.approx(3.0)
+    assert result.attempt_history[1].execution_latency_ms == pytest.approx(4.0)
+    assert result.total_duration_ms == pytest.approx(4000.0)
 
 
 def test_same_tier_retries_exhausted_escalates_then_succeeds() -> None:
@@ -112,6 +140,16 @@ def test_low_medium_high_escalation_ends_at_high() -> None:
     assert result.verification_result.passed is True
     assert result.final_decision is not None
     assert result.final_decision.action is Action.ACCEPT
+    assert result.attempt_history is not None
+    assert [attempt.model_tier for attempt in result.attempt_history] == [
+        ModelTier.LOW,
+        ModelTier.LOW,
+        ModelTier.MEDIUM,
+        ModelTier.MEDIUM,
+        ModelTier.HIGH,
+    ]
+    assert all(attempt.execution_latency_ms >= 0 for attempt in result.attempt_history)
+    assert result.total_duration_ms >= 0
 
 
 def test_all_tiers_fail_stops_at_high() -> None:
