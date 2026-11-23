@@ -8,10 +8,12 @@ from tokrix.routing.benchmark import (
     RoutingStrategyMetrics,
     evaluate_routing,
 )
+from tokrix.routing.dataset import BenchmarkDatasetEntry, get_benchmark_dataset
 from tokrix.routing.router import ModelTier, RoutingDecision, route_model
 
 __all__ = [
     "AdaptiveRoutingResult",
+    "BenchmarkDatasetEntry",
     "ModelTier",
     "RoutingBenchmarkCase",
     "RoutingBenchmarkCaseResult",
@@ -19,6 +21,7 @@ __all__ = [
     "RoutingDecision",
     "RoutingStrategyMetrics",
     "evaluate_routing",
+    "get_benchmark_dataset",
     "recommend_tier",
     "route_model",
 ]
