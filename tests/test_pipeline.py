@@ -3,6 +3,8 @@ import pytest
 from tokrix.budget.adaptive import BudgetMode
 from tokrix.decision import Action
 from tokrix.execution import ExecutionRequest, ExecutionResponse
+from tokrix.feedback import FeedbackCollector, FeedbackRecord
+from tokrix.intelligence.classifier import TaskType
 from tokrix.pipeline import PipelineResult, TokrixPipeline, orchestrator
 from tokrix.routing.router import ModelTier
 
@@ -33,6 +35,31 @@ class SequenceProvider:
         return ExecutionResponse(content=self.responses[index])
 
 
+class SeededFeedbackCollector:
+    def __init__(self, records: list[FeedbackRecord]) -> None:
+        self._initial_records = tuple(records)
+        self._collector = FeedbackCollector()
+
+    def snapshot(self) -> tuple[FeedbackRecord, ...]:
+        return (*self._initial_records, *self._collector.snapshot())
+
+    def record(self, result: PipelineResult) -> None:
+        self._collector.record(result)
+
+
+def _feedback_record(tier: ModelTier, passed: bool) -> FeedbackRecord:
+    return FeedbackRecord(
+        attempt_number=1,
+        task_type=TaskType.QUESTION_ANSWERING,
+        model_tier=tier,
+        verification_passed=passed,
+        action=Action.ACCEPT if passed else Action.RETRY,
+        execution_latency_ms=1.0,
+        pipeline_accepted=passed,
+        pipeline_stopped=not passed,
+    )
+
+
 def test_successful_end_to_end_pipeline() -> None:
     low = FakeProvider("low result")
     pipeline = TokrixPipeline({ModelTier.LOW: low})
@@ -59,6 +86,180 @@ def test_successful_end_to_end_pipeline() -> None:
     assert len(result.attempt_history) == 1
     assert isinstance(result.attempt_history[0].execution_latency_ms, (int, float))
     assert result.attempt_history[0].execution_latency_ms >= 0
+
+
+def test_pipeline_without_feedback_keeps_original_routing() -> None:
+    result = TokrixPipeline({ModelTier.LOW: FakeProvider()}).run(
+        "What is photosynthesis?",
+        BudgetMode.COST_OPTIMIZED,
+    )
+
+    assert result.routing_decision.tier is ModelTier.LOW
+    assert result.recommended_tier is ModelTier.LOW
+    assert result.selected_tier is ModelTier.LOW
+    assert result.adaptive_routing_result is None
+
+
+def test_insufficient_feedback_falls_back_to_original_tier() -> None:
+    collector = SeededFeedbackCollector(
+        [_feedback_record(ModelTier.LOW, False) for _ in range(4)]
+    )
+    result = TokrixPipeline(
+        {ModelTier.LOW: FakeProvider(), ModelTier.MEDIUM: FakeProvider()},
+        feedback_collector=collector,
+    ).run("What is photosynthesis?", BudgetMode.COST_OPTIMIZED)
+
+    assert result.routing_decision.tier is ModelTier.LOW
+    assert result.adaptive_routing_result is not None
+    assert result.adaptive_routing_result.adjusted is False
+    assert result.recommended_tier is ModelTier.LOW
+    assert result.selected_tier is ModelTier.LOW
+
+
+def test_historical_feedback_recommends_and_executes_higher_tier() -> None:
+    collector = SeededFeedbackCollector(
+        [
+            *(_feedback_record(ModelTier.LOW, False) for _ in range(5)),
+            *(_feedback_record(ModelTier.MEDIUM, True) for _ in range(5)),
+        ]
+    )
+    low = FakeProvider("low response")
+    medium = FakeProvider("medium response")
+    result = TokrixPipeline(
+        {ModelTier.LOW: low, ModelTier.MEDIUM: medium},
+        feedback_collector=collector,
+    ).run("What is photosynthesis?", BudgetMode.COST_OPTIMIZED)
+
+    assert result.routing_decision.tier is ModelTier.LOW
+    assert result.adaptive_routing_result is not None
+    assert result.adaptive_routing_result.adjusted is True
+    assert result.recommended_tier is ModelTier.MEDIUM
+    assert result.selected_tier is ModelTier.MEDIUM
+    assert low.received_request is None
+    assert medium.received_request is not None
+
+
+def test_completed_run_feedback_can_influence_a_later_run() -> None:
+    collector = SeededFeedbackCollector(
+        [
+            *(_feedback_record(ModelTier.LOW, False) for _ in range(4)),
+            *(_feedback_record(ModelTier.MEDIUM, True) for _ in range(4)),
+        ]
+    )
+    low = SequenceProvider([" "] * 5)
+    medium = FakeProvider("medium response")
+    pipeline = TokrixPipeline(
+        {ModelTier.LOW: low, ModelTier.MEDIUM: medium},
+        feedback_collector=collector,
+    )
+
+    first = pipeline.run(
+        "What is photosynthesis?",
+        BudgetMode.COST_OPTIMIZED,
+        max_retries=4,
+    )
+
+    assert first.adaptive_routing_result is not None
+    assert first.adaptive_routing_result.adjusted is False
+    assert first.selected_tier is ModelTier.MEDIUM
+    assert len(collector.snapshot()) == 14
+
+    second = pipeline.run("What is photosynthesis?", BudgetMode.COST_OPTIMIZED)
+
+    assert second.adaptive_routing_result is not None
+    assert second.adaptive_routing_result.adjusted is True
+    assert second.recommended_tier is ModelTier.MEDIUM
+    assert second.attempt_history is not None
+    assert second.attempt_history[0].model_tier is ModelTier.MEDIUM
+
+
+def test_current_run_feedback_is_recorded_only_after_execution() -> None:
+    collector = SeededFeedbackCollector(
+        [
+            *(_feedback_record(ModelTier.LOW, False) for _ in range(5)),
+            *(_feedback_record(ModelTier.MEDIUM, True) for _ in range(5)),
+        ]
+    )
+    initial_count = len(collector.snapshot())
+
+    class SnapshotObservingProvider(FakeProvider):
+        def execute(self, request: ExecutionRequest) -> ExecutionResponse:
+            assert len(collector.snapshot()) == initial_count
+            return super().execute(request)
+
+    pipeline = TokrixPipeline(
+        {
+            ModelTier.LOW: SnapshotObservingProvider(),
+            ModelTier.MEDIUM: SnapshotObservingProvider(),
+        },
+        feedback_collector=collector,
+    )
+
+    pipeline.run("What is photosynthesis?", BudgetMode.COST_OPTIMIZED)
+
+    assert len(collector.snapshot()) == initial_count + 1
+
+
+def test_adaptive_selection_preserves_retry_escalation_and_verification() -> None:
+    collector = SeededFeedbackCollector(
+        [
+            *(_feedback_record(ModelTier.LOW, False) for _ in range(5)),
+            *(_feedback_record(ModelTier.MEDIUM, True) for _ in range(5)),
+        ]
+    )
+    medium = SequenceProvider([" ", " "])
+    high = FakeProvider("high response")
+    pipeline = TokrixPipeline(
+        {
+            ModelTier.LOW: FakeProvider("unused low"),
+            ModelTier.MEDIUM: medium,
+            ModelTier.HIGH: high,
+        },
+        feedback_collector=collector,
+    )
+
+    result = pipeline.run(
+        "What is photosynthesis?",
+        BudgetMode.COST_OPTIMIZED,
+        max_retries=0,
+    )
+
+    assert result.recommended_tier is ModelTier.MEDIUM
+    assert result.selected_tier is ModelTier.HIGH
+    assert result.verification_result is not None
+    assert result.verification_result.passed is True
+    assert result.attempt_history is not None
+    assert [attempt.model_tier for attempt in result.attempt_history] == [
+        ModelTier.MEDIUM,
+        ModelTier.HIGH,
+    ]
+
+
+def test_execution_exception_does_not_change_feedback_state() -> None:
+    collector = SeededFeedbackCollector(
+        [_feedback_record(ModelTier.LOW, False) for _ in range(2)]
+    )
+    before = collector.snapshot()
+
+    class FailsDuringRetry:
+        def __init__(self) -> None:
+            self.call_count = 0
+
+        def execute(self, request: ExecutionRequest) -> ExecutionResponse:
+            self.call_count += 1
+            if self.call_count == 1:
+                return ExecutionResponse(content=" ")
+            raise RuntimeError("provider failed after a completed attempt")
+
+    pipeline = TokrixPipeline(
+        {ModelTier.LOW: FailsDuringRetry()},
+        feedback_collector=collector,
+    )
+
+    with pytest.raises(RuntimeError, match="provider failed after a completed attempt"):
+        pipeline.run("What is photosynthesis?", BudgetMode.COST_OPTIMIZED)
+
+    assert collector.snapshot() == before
 
 
 def test_initial_failure_retries_same_tier_then_succeeds() -> None:

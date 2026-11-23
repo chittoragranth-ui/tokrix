@@ -27,6 +27,31 @@ python examples/basic_pipeline.py
 The model names in `examples/basic_pipeline.py` are constants and can be changed
 to models available to your OpenAI account.
 
+Feedback-driven adaptive routing
+--------------------------------
+
+Adaptive routing is opt-in. Pass an in-memory `FeedbackCollector` to the
+pipeline to use past verification outcomes when choosing the initial tier:
+
+```python
+from tokrix.feedback import FeedbackCollector
+from tokrix.pipeline import TokrixPipeline
+
+feedback = FeedbackCollector()
+pipeline = TokrixPipeline(providers, feedback_collector=feedback)
+result = pipeline.run("Explain photosynthesis.")
+
+print(result.routing_decision.tier)  # Original budget-based tier
+print(result.recommended_tier)       # Adaptive recommendation
+print(result.selected_tier)          # Tier actually used after any escalation
+```
+
+The pipeline snapshots existing feedback before routing, then records the
+completed run's per-attempt feedback afterward. A request therefore cannot use
+its own outcome to choose its initial tier. With no collector, routing behaves
+as before. The collector stores feedback only in memory; the adaptive policy
+retains its existing evidence thresholds and upgrades by at most one tier.
+
 Offline routing benchmarks
 --------------------------
 

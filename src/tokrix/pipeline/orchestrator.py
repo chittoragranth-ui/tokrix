@@ -1,8 +1,11 @@
 """Unified orchestration for Tokrix prompt analysis and execution."""
 
+from __future__ import annotations
+
 import time
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Protocol
 
 from tokrix.budget.adaptive import BudgetDecision, BudgetMode, allocate_budget
 from tokrix.decision.engine import Action, DecisionResult, decide_action
@@ -18,8 +21,12 @@ from tokrix.intelligence.classifier import (
 )
 from tokrix.intelligence.complexity import ComplexityResult, analyze_complexity
 from tokrix.intelligence.token_estimator import estimate_tokens
+from tokrix.routing.adaptive import AdaptiveRoutingResult, recommend_tier
 from tokrix.routing.router import ModelTier, RoutingDecision, route_model
 from tokrix.verification.verifier import VerificationResult, verify_response
+
+if TYPE_CHECKING:
+    from tokrix.feedback.collector import FeedbackRecord
 
 
 class _TimedProvider:
@@ -76,6 +83,7 @@ class PipelineResult:
     attempt_history: list[PipelineAttempt] | None = None
     final_decision: DecisionResult | None = None
     total_duration_ms: float = 0.0
+    adaptive_routing_result: AdaptiveRoutingResult | None = None
 
     @property
     def execution_response(self) -> ExecutionResponse:
@@ -103,17 +111,43 @@ class PipelineResult:
         return self.selected_tier
 
     @property
+    def recommended_tier(self) -> ModelTier:
+        """Tier recommended before execution, prior to any escalation."""
+        if self.adaptive_routing_result is None:
+            return self.routing_decision.tier
+        return self.adaptive_routing_result.recommended_tier
+
+    @property
     def final_verification(self) -> VerificationResult | None:
         """Verification result from the final execution attempt."""
         return self.verification_result
 
 
+class _FeedbackStore(Protocol):
+    """Feedback lifecycle consumed by a pipeline instance."""
+
+    def snapshot(self) -> Iterable[FeedbackRecord]: ...
+
+    def record(self, result: PipelineResult) -> None: ...
+
+
 class TokrixPipeline:
     """Analyze, allocate, route, and execute a single prompt."""
 
-    def __init__(self, providers: Mapping[ModelTier, ModelProvider]) -> None:
+    def __init__(
+        self,
+        providers: Mapping[ModelTier, ModelProvider],
+        feedback_collector: _FeedbackStore | None = None,
+    ) -> None:
         if not isinstance(providers, Mapping):
             raise TypeError("providers must be a mapping from ModelTier to providers")
+        if feedback_collector is not None and (
+            not callable(getattr(feedback_collector, "snapshot", None))
+            or not callable(getattr(feedback_collector, "record", None))
+        ):
+            raise TypeError(
+                "feedback_collector must implement snapshot and record"
+            )
 
         validated: dict[ModelTier, ModelProvider] = {}
         for tier, provider in providers.items():
@@ -125,6 +159,7 @@ class TokrixPipeline:
                 )
             validated[tier] = provider
         self._providers = validated
+        self._feedback_collector = feedback_collector
 
     def run(
         self,
@@ -155,7 +190,19 @@ class TokrixPipeline:
             mode=mode,
         )
         routing = route_model(budget)
-        tier = routing.tier
+        adaptive_routing_result = None
+        if self._feedback_collector is not None:
+            historical_feedback = self._feedback_collector.snapshot()
+            adaptive_routing_result = recommend_tier(
+                routing,
+                classification.task_type,
+                historical_feedback,
+            )
+        tier = (
+            adaptive_routing_result.recommended_tier
+            if adaptive_routing_result is not None
+            else routing.tier
+        )
 
         provider = self._providers.get(tier)
         if provider is None:
@@ -232,7 +279,7 @@ class TokrixPipeline:
             0.0,
             (time.perf_counter() - pipeline_started) * 1000,
         )
-        return PipelineResult(
+        result = PipelineResult(
             response=response,
             complexity_result=complexity,
             classification_result=classification,
@@ -244,4 +291,12 @@ class TokrixPipeline:
             attempt_history=attempt_history,
             final_decision=final_decision,
             total_duration_ms=total_duration_ms,
+            adaptive_routing_result=adaptive_routing_result,
         )
+        if self._feedback_collector is not None:
+            self._feedback_collector.record(result)
+            result.total_duration_ms = max(
+                0.0,
+                (time.perf_counter() - pipeline_started) * 1000,
+            )
+        return result
