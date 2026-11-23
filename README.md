@@ -30,10 +30,33 @@ to models available to your OpenAI account.
 Offline routing benchmarks
 --------------------------
 
-`tokrix.routing.benchmark.evaluate_routing` compares static routing with the
-existing adaptive recommendation policy using controlled benchmark cases.
-Historical feedback is used only for adaptive recommendations; separately
-provided expected outcomes score the selected tiers. Evaluation is offline and
-does not execute models or make provider calls. Its LOW/MEDIUM/HIGH cost proxies
-(1/2/3) are relative units, not pricing or token-cost estimates, and benchmark
-results are not claims about real-world model performance.
+The offline routing benchmark compares static routing with Tokrix's adaptive
+routing policy using a deterministic, built-in dataset of synthetic cases. It
+uses historical feedback as input to adaptive recommendations and controlled
+expected outcomes to score the selected tiers. It does not execute models,
+make provider calls, or require API keys.
+
+From the repository root, install Tokrix in editable mode and run the example:
+
+```bash
+python3 -m pip install -e .
+python3 examples/routing_benchmark.py
+```
+
+The report includes verification success rates for static and adaptive routing,
+their difference in percentage points, average tier-cost proxies, relative cost
+change, and changes in LOW/MEDIUM/HIGH tier counts. It also counts cases where
+adaptive verification improved, degraded, or stayed unchanged compared with
+static routing; the outcome percentages use all evaluated cases as their
+denominator.
+
+All reported differences are adaptive minus static. A positive success-rate
+difference means adaptive routing succeeded more often; a negative one means it
+succeeded less often. A positive cost difference means a higher relative tier
+cost, while a negative one means a lower relative tier cost. The tier-cost
+proxy assigns LOW/MEDIUM/HIGH the relative values 1/2/3; it is not provider
+pricing, token usage, or a monetary estimate.
+
+The expected outcomes are synthetic benchmark data, not measurements from real
+models. Treat the results as a reproducible demonstration of the evaluation
+workflow, not as evidence or a prediction of real-world model performance.
