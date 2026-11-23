@@ -26,3 +26,14 @@ python examples/basic_pipeline.py
 
 The model names in `examples/basic_pipeline.py` are constants and can be changed
 to models available to your OpenAI account.
+
+Offline routing benchmarks
+--------------------------
+
+`tokrix.routing.benchmark.evaluate_routing` compares static routing with the
+existing adaptive recommendation policy using controlled benchmark cases.
+Historical feedback is used only for adaptive recommendations; separately
+provided expected outcomes score the selected tiers. Evaluation is offline and
+does not execute models or make provider calls. Its LOW/MEDIUM/HIGH cost proxies
+(1/2/3) are relative units, not pricing or token-cost estimates, and benchmark
+results are not claims about real-world model performance.
