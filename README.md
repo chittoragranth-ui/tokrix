@@ -101,10 +101,21 @@ Offline routing benchmarks
 --------------------------
 
 The offline routing benchmark compares static routing with Tokrix's adaptive
-routing policy using a deterministic, built-in dataset of synthetic cases. It
-uses historical feedback as input to adaptive recommendations and controlled
-expected outcomes to score the selected tiers. It does not execute models,
-make provider calls, or require API keys.
+routing policy using a deterministic, built-in catalog of 29 immutable
+scenarios, covering all seven task types. Each scenario includes a workload
+group, a 1–5 difficulty level, qualitative resource demand, a representative
+prompt, historical feedback for routing, and expected verification outcomes
+for LOW, MEDIUM, and HIGH tiers. The catalog spans factual, reasoning, coding
+and debugging, long-document summarization, ambiguous, multi-constraint,
+resource-constrained, structured-data, and creative workloads.
+
+Expected outcomes are controlled synthetic assumptions designed to include
+cases where LOW is enough, MEDIUM or HIGH improves results, higher tiers add
+little, or a higher tier performs worse. They are not measurements of real
+provider or model performance. The benchmark uses these outcomes to score
+selected tiers, and uses historical synthetic feedback separately for adaptive
+recommendations. It does not execute models, make provider calls, or require
+API keys.
 
 From the repository root, install Tokrix in editable mode and run the example:
 
@@ -130,3 +141,36 @@ pricing, token usage, or a monetary estimate.
 The expected outcomes are synthetic benchmark data, not measurements from real
 models. Treat the results as a reproducible demonstration of the evaluation
 workflow, not as evidence or a prediction of real-world model performance.
+
+### Quality, cost, and latency assumptions
+
+The companion performance dataset assigns each scenario a synthetic quality
+score and normalized cost/latency profile for every tier. The profiles are
+deterministic assumptions derived from the scenario's modeled verification
+outcomes, complexity, and resource demand; they are not empirical measurements
+of real models or providers. Evaluate aggregate and per-scenario trade-offs
+offline:
+
+```python
+from tokrix.routing import (
+    evaluate_routing_performance,
+    get_performance_benchmark_dataset,
+)
+
+result = evaluate_routing_performance(get_performance_benchmark_dataset())
+print(result.static_metrics.average_quality_score)
+print(result.adaptive_metrics.average_cost_units)
+print(result.adaptive_metrics.average_latency_ms)
+print(result.case_results[0])  # Per-scenario selected tiers and profiles
+```
+
+Run the complete report with:
+
+```bash
+python3 examples/routing_performance_benchmark.py
+```
+
+Higher quality may come with greater modeled cost or latency, while scenarios
+where LOW already meets the expected outcome can show no modeled quality gain
+from higher tiers. Cost units are normalized within this synthetic dataset,
+not provider prices. Provider benchmarking is outside this offline example.
