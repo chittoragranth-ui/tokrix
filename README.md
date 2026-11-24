@@ -67,7 +67,18 @@ result = pipeline.run("Explain photosynthesis.")
 print(result.routing_decision.tier)  # Original budget-based tier
 print(result.recommended_tier)  # Adaptive recommendation
 print(result.selected_tier)  # Tier actually used after any escalation
+print(result.adaptive_routing_explanation.reason_code)
+print(result.adaptive_routing_explanation.tier_sample_counts)
+print(result.adaptive_routing_explanation.tier_success_rates)
 ```
+
+`adaptive_routing_explanation` is an immutable snapshot with the original and
+recommended tiers, task type, policy, evidence availability, per-tier sample
+counts and success rates, upgrade outcome, stable reason code, and readable
+reason. Its reason code distinguishes an approved upgrade, a sufficiently
+successful current tier, insufficient evidence, unmet higher-tier thresholds,
+no eligible higher tier, disabled adaptive routing, and an unavailable feedback
+collector. It reflects only feedback available before the run began.
 
 To disable adaptive recommendations while keeping feedback collection:
 

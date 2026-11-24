@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
+from enum import Enum
 from fractions import Fraction
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 from tokrix.intelligence.classifier import TaskType
@@ -24,6 +26,18 @@ _NEXT_TIER = {
     ModelTier.LOW: ModelTier.MEDIUM,
     ModelTier.MEDIUM: ModelTier.HIGH,
 }
+
+
+class AdaptiveRoutingReason(Enum):
+    """Stable reason codes for adaptive routing outcomes."""
+
+    UPGRADE_APPROVED = "upgrade_approved"
+    CURRENT_TIER_SUFFICIENT = "current_tier_sufficient"
+    INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+    HIGHER_TIER_POLICY_NOT_MET = "higher_tier_policy_not_met"
+    NO_ELIGIBLE_HIGHER_TIER = "no_eligible_higher_tier"
+    ADAPTIVE_ROUTING_DISABLED = "adaptive_routing_disabled"
+    FEEDBACK_COLLECTOR_UNAVAILABLE = "feedback_collector_unavailable"
 
 
 @dataclass(frozen=True)
@@ -64,6 +78,12 @@ class AdaptiveRoutingPolicy:
             object.__setattr__(self, field_name, fraction)
 
 
+def _immutable_tier_mapping(
+    values: Mapping[ModelTier, int | float | None],
+) -> Mapping[ModelTier, int | float | None]:
+    return MappingProxyType(dict(values))
+
+
 @dataclass(frozen=True)
 class AdaptiveRoutingResult:
     """Static and evidence-informed tier recommendations."""
@@ -77,6 +97,56 @@ class AdaptiveRoutingResult:
     higher_tier_samples: int | None
     higher_tier_success_rate: float | None
     reason: str
+    reason_code: AdaptiveRoutingReason = AdaptiveRoutingReason.INSUFFICIENT_EVIDENCE
+    evidence_sufficient: bool | None = None
+    tier_sample_counts: Mapping[ModelTier, int] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+    tier_success_rates: Mapping[ModelTier, float | None] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "tier_sample_counts",
+            _immutable_tier_mapping(self.tier_sample_counts),
+        )
+        object.__setattr__(
+            self,
+            "tier_success_rates",
+            _immutable_tier_mapping(self.tier_success_rates),
+        )
+
+
+@dataclass(frozen=True)
+class AdaptiveRoutingExplanation:
+    """Immutable explanation of an adaptive routing decision or skipped check."""
+
+    original_tier: ModelTier
+    recommended_tier: ModelTier
+    task_type: TaskType
+    adaptive_routing_enabled: bool
+    feedback_available: bool
+    evidence_sufficient: bool | None
+    tier_sample_counts: Mapping[ModelTier, int]
+    tier_success_rates: Mapping[ModelTier, float | None]
+    policy: AdaptiveRoutingPolicy
+    upgrade_made: bool
+    reason_code: AdaptiveRoutingReason
+    reason: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "tier_sample_counts",
+            _immutable_tier_mapping(self.tier_sample_counts),
+        )
+        object.__setattr__(
+            self,
+            "tier_success_rates",
+            _immutable_tier_mapping(self.tier_success_rates),
+        )
 
 
 def _validate_feedback_record(record: FeedbackRecord) -> None:
@@ -168,6 +238,21 @@ def recommend_tier(
     current_rate = (
         current_successes / current_samples if current_samples else 0.0
     )
+    tier_samples = {
+        tier: sum(record.model_tier is tier for record in task_type_records)
+        for tier in ModelTier
+    }
+    tier_rates: dict[ModelTier, float | None] = {}
+    for tier in ModelTier:
+        tier_records = [
+            record for record in task_type_records if record.model_tier is tier
+        ]
+        tier_rates[tier] = (
+            sum(record.verification_passed for record in tier_records)
+            / len(tier_records)
+            if tier_records
+            else None
+        )
 
     if next_tier is None:
         return AdaptiveRoutingResult(
@@ -180,6 +265,10 @@ def recommend_tier(
             higher_tier_samples=None,
             higher_tier_success_rate=None,
             reason="HIGH is the maximum tier; no upgrade is available.",
+            reason_code=AdaptiveRoutingReason.NO_ELIGIBLE_HIGHER_TIER,
+            evidence_sufficient=None,
+            tier_sample_counts=tier_samples,
+            tier_success_rates=tier_rates,
         )
 
     higher_records = [
@@ -197,6 +286,8 @@ def recommend_tier(
             f"current-tier attempts; {policy.minimum_samples_per_tier} required."
         )
         adjusted = False
+        reason_code = AdaptiveRoutingReason.INSUFFICIENT_EVIDENCE
+        evidence_sufficient = False
     elif current_successes * policy.max_current_success_rate.denominator > (
         current_samples * policy.max_current_success_rate.numerator
     ):
@@ -207,6 +298,8 @@ def recommend_tier(
             "upgrade limit."
         )
         adjusted = False
+        reason_code = AdaptiveRoutingReason.CURRENT_TIER_SUFFICIENT
+        evidence_sufficient = True
     elif higher_samples < policy.minimum_samples_per_tier:
         reason = (
             f"Retain {current_tier.value.upper()}: only {higher_samples} "
@@ -214,6 +307,8 @@ def recommend_tier(
             f"{policy.minimum_samples_per_tier} required."
         )
         adjusted = False
+        reason_code = AdaptiveRoutingReason.INSUFFICIENT_EVIDENCE
+        evidence_sufficient = False
     else:
         current_fraction = Fraction(current_successes, current_samples)
         higher_fraction = Fraction(higher_successes, higher_samples)
@@ -229,6 +324,8 @@ def recommend_tier(
                 "per tier."
             )
             adjusted = True
+            reason_code = AdaptiveRoutingReason.UPGRADE_APPROVED
+            evidence_sufficient = True
         else:
             reason = (
                 f"Retain {current_tier.value.upper()}: higher-tier evidence "
@@ -236,6 +333,8 @@ def recommend_tier(
                 f"and improvement thresholds."
             )
             adjusted = False
+            reason_code = AdaptiveRoutingReason.HIGHER_TIER_POLICY_NOT_MET
+            evidence_sufficient = True
 
     return AdaptiveRoutingResult(
         original_tier=current_tier,
@@ -247,4 +346,8 @@ def recommend_tier(
         higher_tier_samples=higher_samples,
         higher_tier_success_rate=higher_rate,
         reason=reason,
+        reason_code=reason_code,
+        evidence_sufficient=evidence_sufficient,
+        tier_sample_counts=tier_samples,
+        tier_success_rates=tier_rates,
     )

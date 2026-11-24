@@ -1,7 +1,9 @@
 """Provider-independent model tier routing."""
 
 from tokrix.routing.adaptive import (
+    AdaptiveRoutingExplanation,
     AdaptiveRoutingPolicy,
+    AdaptiveRoutingReason,
     AdaptiveRoutingResult,
     recommend_tier,
 )
@@ -21,7 +23,9 @@ from tokrix.routing.dataset import BenchmarkDatasetEntry, get_benchmark_dataset
 from tokrix.routing.router import ModelTier, RoutingDecision, route_model
 
 __all__ = [
+    "AdaptiveRoutingExplanation",
     "AdaptiveRoutingPolicy",
+    "AdaptiveRoutingReason",
     "AdaptiveRoutingResult",
     "BenchmarkDatasetEntry",
     "ModelTier",

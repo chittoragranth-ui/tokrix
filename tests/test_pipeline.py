@@ -1,3 +1,5 @@
+from dataclasses import FrozenInstanceError
+
 import pytest
 
 from tokrix.budget.adaptive import BudgetMode
@@ -5,9 +7,14 @@ from tokrix.decision import Action
 from tokrix.execution import ExecutionRequest, ExecutionResponse
 from tokrix.feedback import FeedbackCollector, FeedbackRecord
 from tokrix.intelligence.classifier import TaskType
-from tokrix.pipeline import PipelineResult, TokrixPipeline, orchestrator
-from tokrix.routing import AdaptiveRoutingPolicy
-from tokrix.routing.router import ModelTier
+from tokrix.pipeline import (
+    AdaptiveRoutingExplanation,
+    PipelineResult,
+    TokrixPipeline,
+    orchestrator,
+)
+from tokrix.routing import AdaptiveRoutingPolicy, AdaptiveRoutingReason
+from tokrix.routing.router import ModelTier, RoutingDecision
 
 
 class FakeProvider:
@@ -99,6 +106,12 @@ def test_pipeline_without_feedback_keeps_original_routing() -> None:
     assert result.recommended_tier is ModelTier.LOW
     assert result.selected_tier is ModelTier.LOW
     assert result.adaptive_routing_result is None
+    assert result.adaptive_routing_explanation is not None
+    assert (
+        result.adaptive_routing_explanation.reason_code
+        is AdaptiveRoutingReason.FEEDBACK_COLLECTOR_UNAVAILABLE
+    )
+    assert result.adaptive_routing_explanation.feedback_available is False
 
 
 def test_insufficient_feedback_falls_back_to_original_tier() -> None:
@@ -138,6 +151,22 @@ def test_historical_feedback_recommends_and_executes_higher_tier() -> None:
     assert result.selected_tier is ModelTier.MEDIUM
     assert low.received_request is None
     assert medium.received_request is not None
+    explanation = result.adaptive_routing_explanation
+    assert isinstance(explanation, AdaptiveRoutingExplanation)
+    assert explanation.original_tier is result.routing_decision.tier
+    assert explanation.recommended_tier is result.recommended_tier
+    assert explanation.task_type is result.classification_result.task_type
+    assert explanation.adaptive_routing_enabled is True
+    assert explanation.feedback_available is True
+    assert explanation.evidence_sufficient is True
+    assert explanation.tier_sample_counts[ModelTier.LOW] == 5
+    assert explanation.tier_sample_counts[ModelTier.MEDIUM] == 5
+    assert explanation.tier_success_rates[ModelTier.LOW] == 0.0
+    assert explanation.tier_success_rates[ModelTier.MEDIUM] == 1.0
+    assert explanation.policy == AdaptiveRoutingPolicy()
+    assert explanation.upgrade_made is True
+    assert explanation.reason_code is AdaptiveRoutingReason.UPGRADE_APPROVED
+    assert explanation.reason == result.adaptive_routing_result.reason
 
 
 def test_pipeline_uses_configured_adaptive_policy() -> None:
@@ -190,9 +219,137 @@ def test_disabling_adaptive_routing_keeps_static_tier_and_records_feedback() -> 
     assert result.recommended_tier is ModelTier.LOW
     assert result.selected_tier is ModelTier.LOW
     assert result.adaptive_routing_result is None
+    explanation = result.adaptive_routing_explanation
+    assert isinstance(explanation, AdaptiveRoutingExplanation)
+    assert explanation.reason_code is AdaptiveRoutingReason.ADAPTIVE_ROUTING_DISABLED
+    assert explanation.adaptive_routing_enabled is False
+    assert explanation.feedback_available is True
+    assert explanation.evidence_sufficient is None
+    assert explanation.tier_sample_counts == {}
+    assert explanation.upgrade_made is False
     assert low.received_request is not None
     assert medium.received_request is None
     assert len(collector.snapshot()) == initial_count + 1
+
+
+def test_pipeline_explains_insufficient_evidence() -> None:
+    collector = SeededFeedbackCollector(
+        [_feedback_record(ModelTier.LOW, False) for _ in range(4)]
+    )
+    result = TokrixPipeline(
+        {ModelTier.LOW: FakeProvider(), ModelTier.MEDIUM: FakeProvider()},
+        feedback_collector=collector,
+    ).run("What is photosynthesis?", BudgetMode.COST_OPTIMIZED)
+
+    explanation = result.adaptive_routing_explanation
+    assert isinstance(explanation, AdaptiveRoutingExplanation)
+    assert explanation.reason_code is AdaptiveRoutingReason.INSUFFICIENT_EVIDENCE
+    assert explanation.evidence_sufficient is False
+    assert explanation.tier_sample_counts[ModelTier.LOW] == 4
+    assert explanation.tier_sample_counts[ModelTier.MEDIUM] == 0
+    assert explanation.tier_success_rates[ModelTier.LOW] == 0.0
+    assert explanation.recommended_tier is result.routing_decision.tier
+
+
+def test_pipeline_explains_current_tier_meets_policy() -> None:
+    collector = SeededFeedbackCollector(
+        [_feedback_record(ModelTier.LOW, True) for _ in range(5)]
+    )
+    result = TokrixPipeline(
+        {ModelTier.LOW: FakeProvider(), ModelTier.MEDIUM: FakeProvider()},
+        feedback_collector=collector,
+    ).run("What is photosynthesis?", BudgetMode.COST_OPTIMIZED)
+
+    explanation = result.adaptive_routing_explanation
+    assert isinstance(explanation, AdaptiveRoutingExplanation)
+    assert (
+        explanation.reason_code is AdaptiveRoutingReason.CURRENT_TIER_SUFFICIENT
+    )
+    assert explanation.evidence_sufficient is True
+    assert explanation.upgrade_made is False
+    assert explanation.tier_success_rates[ModelTier.LOW] == 1.0
+
+
+def test_pipeline_explains_higher_tier_policy_failure() -> None:
+    collector = SeededFeedbackCollector(
+        [
+            *(_feedback_record(ModelTier.LOW, False) for _ in range(5)),
+            *(_feedback_record(ModelTier.MEDIUM, passed) for passed in (
+                True,
+                True,
+                True,
+                False,
+                False,
+            )),
+        ]
+    )
+    result = TokrixPipeline(
+        {ModelTier.LOW: FakeProvider(), ModelTier.MEDIUM: FakeProvider()},
+        feedback_collector=collector,
+    ).run("What is photosynthesis?", BudgetMode.COST_OPTIMIZED)
+
+    explanation = result.adaptive_routing_explanation
+    assert isinstance(explanation, AdaptiveRoutingExplanation)
+    assert (
+        explanation.reason_code
+        is AdaptiveRoutingReason.HIGHER_TIER_POLICY_NOT_MET
+    )
+    assert explanation.evidence_sufficient is True
+    assert explanation.tier_success_rates[ModelTier.MEDIUM] == pytest.approx(0.6)
+    assert explanation.upgrade_made is False
+
+
+def test_pipeline_explains_no_eligible_higher_tier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        orchestrator,
+        "route_model",
+        lambda budget: RoutingDecision(
+            tier=ModelTier.HIGH,
+            budget_score=90,
+            reason="test static high",
+        ),
+    )
+    collector = SeededFeedbackCollector(
+        [_feedback_record(ModelTier.HIGH, False) for _ in range(5)]
+    )
+    result = TokrixPipeline(
+        {ModelTier.HIGH: FakeProvider()},
+        feedback_collector=collector,
+    ).run("What is photosynthesis?", BudgetMode.COST_OPTIMIZED)
+
+    explanation = result.adaptive_routing_explanation
+    assert isinstance(explanation, AdaptiveRoutingExplanation)
+    assert (
+        explanation.reason_code is AdaptiveRoutingReason.NO_ELIGIBLE_HIGHER_TIER
+    )
+    assert explanation.evidence_sufficient is None
+    assert explanation.tier_sample_counts[ModelTier.HIGH] == 5
+    assert explanation.tier_success_rates[ModelTier.HIGH] == 0.0
+    assert explanation.recommended_tier is ModelTier.HIGH
+
+
+def test_pipeline_explanation_is_an_immutable_snapshot() -> None:
+    collector = SeededFeedbackCollector(
+        [
+            *(_feedback_record(ModelTier.LOW, False) for _ in range(5)),
+            *(_feedback_record(ModelTier.MEDIUM, True) for _ in range(5)),
+        ]
+    )
+    result = TokrixPipeline(
+        {ModelTier.LOW: FakeProvider(), ModelTier.MEDIUM: FakeProvider()},
+        feedback_collector=collector,
+    ).run("What is photosynthesis?", BudgetMode.COST_OPTIMIZED)
+
+    explanation = result.adaptive_routing_explanation
+    assert isinstance(explanation, AdaptiveRoutingExplanation)
+    assert explanation.tier_sample_counts[ModelTier.LOW] == 5
+    assert len(collector.snapshot()) == 11
+    with pytest.raises(TypeError):
+        explanation.tier_sample_counts[ModelTier.LOW] = 100  # type: ignore[index]
+    with pytest.raises(FrozenInstanceError):
+        explanation.upgrade_made = False  # type: ignore[misc]
 
 
 def test_completed_run_feedback_can_influence_a_later_run() -> None:

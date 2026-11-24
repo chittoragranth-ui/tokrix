@@ -5,5 +5,11 @@ from tokrix.pipeline.orchestrator import (
     PipelineResult,
     TokrixPipeline,
 )
+from tokrix.routing.adaptive import AdaptiveRoutingExplanation
 
-__all__ = ["PipelineAttempt", "PipelineResult", "TokrixPipeline"]
+__all__ = [
+    "AdaptiveRoutingExplanation",
+    "PipelineAttempt",
+    "PipelineResult",
+    "TokrixPipeline",
+]

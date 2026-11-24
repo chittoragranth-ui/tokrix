@@ -8,6 +8,7 @@ from tokrix.feedback import FeedbackRecord
 from tokrix.intelligence.classifier import TaskType
 from tokrix.routing import (
     AdaptiveRoutingPolicy,
+    AdaptiveRoutingReason,
     AdaptiveRoutingResult,
     ModelTier,
     RoutingDecision,
@@ -69,6 +70,8 @@ def test_no_feedback_retains_static_tier() -> None:
     assert result.current_tier_success_rate == 0.0
     assert result.higher_tier_samples == 0
     assert result.higher_tier_success_rate == 0.0
+    assert result.reason_code is AdaptiveRoutingReason.INSUFFICIENT_EVIDENCE
+    assert result.evidence_sufficient is False
 
 
 def test_default_policy_preserves_existing_thresholds() -> None:
@@ -221,6 +224,10 @@ def test_high_tier_never_recommends_upgrade() -> None:
     assert result.recommended_tier is ModelTier.HIGH
     assert result.higher_tier_samples is None
     assert result.higher_tier_success_rate is None
+    assert result.reason_code is AdaptiveRoutingReason.NO_ELIGIBLE_HIGHER_TIER
+    assert result.evidence_sufficient is None
+    assert result.tier_sample_counts[ModelTier.HIGH] == 10
+    assert result.tier_success_rates[ModelTier.HIGH] == 0.0
 
 
 def test_current_tier_performs_well_so_policy_retains_it() -> None:
@@ -230,6 +237,24 @@ def test_current_tier_performs_well_so_policy_retains_it() -> None:
 
     assert result.current_tier_success_rate == pytest.approx(0.8)
     assert result.adjusted is False
+    assert result.reason_code is AdaptiveRoutingReason.CURRENT_TIER_SUFFICIENT
+    assert result.evidence_sufficient is True
+
+
+def test_higher_tier_policy_failure_has_distinct_reason_code() -> None:
+    records = _evidence(ModelTier.LOW, 2, 3, ModelTier.MEDIUM, 3, 2)
+
+    result = recommend_tier(_routing(), TaskType.CODING, records)
+
+    assert result.adjusted is False
+    assert result.reason_code is AdaptiveRoutingReason.HIGHER_TIER_POLICY_NOT_MET
+    assert result.evidence_sufficient is True
+    assert result.tier_sample_counts == {
+        ModelTier.LOW: 5,
+        ModelTier.MEDIUM: 5,
+        ModelTier.HIGH: 0,
+    }
+    assert result.tier_success_rates[ModelTier.MEDIUM] == pytest.approx(0.6)
 
 
 @pytest.mark.parametrize(

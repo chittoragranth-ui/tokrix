@@ -22,7 +22,9 @@ from tokrix.intelligence.classifier import (
 from tokrix.intelligence.complexity import ComplexityResult, analyze_complexity
 from tokrix.intelligence.token_estimator import estimate_tokens
 from tokrix.routing.adaptive import (
+    AdaptiveRoutingExplanation,
     AdaptiveRoutingPolicy,
+    AdaptiveRoutingReason,
     AdaptiveRoutingResult,
     recommend_tier,
 )
@@ -88,6 +90,7 @@ class PipelineResult:
     final_decision: DecisionResult | None = None
     total_duration_ms: float = 0.0
     adaptive_routing_result: AdaptiveRoutingResult | None = None
+    adaptive_routing_explanation: AdaptiveRoutingExplanation | None = None
 
     @property
     def execution_response(self) -> ExecutionResponse:
@@ -173,7 +176,7 @@ class TokrixPipeline:
         self._providers = validated
         self._feedback_collector = feedback_collector
         self._adaptive_routing_enabled = adaptive_routing_enabled
-        self._adaptive_policy = adaptive_policy
+        self._adaptive_policy = adaptive_policy or AdaptiveRoutingPolicy()
 
     def run(
         self,
@@ -205,16 +208,59 @@ class TokrixPipeline:
         )
         routing = route_model(budget)
         adaptive_routing_result = None
-        if (
-            self._adaptive_routing_enabled
-            and self._feedback_collector is not None
-        ):
+        if not self._adaptive_routing_enabled:
+            explanation = AdaptiveRoutingExplanation(
+                original_tier=routing.tier,
+                recommended_tier=routing.tier,
+                task_type=classification.task_type,
+                adaptive_routing_enabled=False,
+                feedback_available=self._feedback_collector is not None,
+                evidence_sufficient=None,
+                tier_sample_counts={},
+                tier_success_rates={},
+                policy=self._adaptive_policy,
+                upgrade_made=False,
+                reason_code=AdaptiveRoutingReason.ADAPTIVE_ROUTING_DISABLED,
+                reason="Adaptive routing is disabled; static routing is used.",
+            )
+        elif self._feedback_collector is None:
+            explanation = AdaptiveRoutingExplanation(
+                original_tier=routing.tier,
+                recommended_tier=routing.tier,
+                task_type=classification.task_type,
+                adaptive_routing_enabled=True,
+                feedback_available=False,
+                evidence_sufficient=None,
+                tier_sample_counts={},
+                tier_success_rates={},
+                policy=self._adaptive_policy,
+                upgrade_made=False,
+                reason_code=AdaptiveRoutingReason.FEEDBACK_COLLECTOR_UNAVAILABLE,
+                reason=(
+                    "No feedback collector is configured; static routing is used."
+                ),
+            )
+        else:
             historical_feedback = self._feedback_collector.snapshot()
             adaptive_routing_result = recommend_tier(
                 routing,
                 classification.task_type,
                 historical_feedback,
                 self._adaptive_policy,
+            )
+            explanation = AdaptiveRoutingExplanation(
+                original_tier=routing.tier,
+                recommended_tier=adaptive_routing_result.recommended_tier,
+                task_type=classification.task_type,
+                adaptive_routing_enabled=True,
+                feedback_available=True,
+                evidence_sufficient=adaptive_routing_result.evidence_sufficient,
+                tier_sample_counts=adaptive_routing_result.tier_sample_counts,
+                tier_success_rates=adaptive_routing_result.tier_success_rates,
+                policy=self._adaptive_policy,
+                upgrade_made=adaptive_routing_result.adjusted,
+                reason_code=adaptive_routing_result.reason_code,
+                reason=adaptive_routing_result.reason,
             )
         tier = (
             adaptive_routing_result.recommended_tier
@@ -310,6 +356,7 @@ class TokrixPipeline:
             final_decision=final_decision,
             total_duration_ms=total_duration_ms,
             adaptive_routing_result=adaptive_routing_result,
+            adaptive_routing_explanation=explanation,
         )
         if self._feedback_collector is not None:
             self._feedback_collector.record(result)
