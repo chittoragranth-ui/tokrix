@@ -1,4 +1,5 @@
 from dataclasses import FrozenInstanceError
+from fractions import Fraction
 
 import pytest
 
@@ -6,6 +7,7 @@ from tokrix.decision import Action
 from tokrix.feedback import FeedbackRecord
 from tokrix.intelligence.classifier import TaskType
 from tokrix.routing import (
+    AdaptiveRoutingPolicy,
     AdaptiveRoutingResult,
     ModelTier,
     RoutingDecision,
@@ -67,6 +69,94 @@ def test_no_feedback_retains_static_tier() -> None:
     assert result.current_tier_success_rate == 0.0
     assert result.higher_tier_samples == 0
     assert result.higher_tier_success_rate == 0.0
+
+
+def test_default_policy_preserves_existing_thresholds() -> None:
+    policy = AdaptiveRoutingPolicy()
+
+    assert policy.minimum_samples_per_tier == 5
+    assert policy.max_current_success_rate == Fraction(3, 5)
+    assert policy.min_higher_success_rate == Fraction(4, 5)
+    assert policy.min_success_rate_improvement == Fraction(1, 5)
+
+
+def test_custom_thresholds_change_recommendation() -> None:
+    records = _evidence(
+        ModelTier.LOW,
+        3,
+        2,
+        ModelTier.MEDIUM,
+        3,
+        2,
+    )
+    policy = AdaptiveRoutingPolicy(
+        max_current_success_rate=Fraction(3, 5),
+        min_higher_success_rate=Fraction(3, 5),
+        min_success_rate_improvement=Fraction(0),
+    )
+
+    default_result = recommend_tier(_routing(), TaskType.CODING, records)
+    custom_result = recommend_tier(
+        _routing(),
+        TaskType.CODING,
+        records,
+        policy,
+    )
+
+    assert default_result.adjusted is False
+    assert custom_result.recommended_tier is ModelTier.MEDIUM
+
+
+def test_minimum_sample_requirement_is_configurable() -> None:
+    records = _evidence(ModelTier.LOW, 2, 1, ModelTier.MEDIUM, 3)
+
+    default_result = recommend_tier(_routing(), TaskType.CODING, records)
+    custom_result = recommend_tier(
+        _routing(),
+        TaskType.CODING,
+        records,
+        AdaptiveRoutingPolicy(
+            minimum_samples_per_tier=3,
+            max_current_success_rate=0.7,
+        ),
+    )
+
+    assert default_result.adjusted is False
+    assert custom_result.adjusted is True
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "error", "message"),
+    [
+        ({"minimum_samples_per_tier": 0}, ValueError, "must be positive"),
+        ({"minimum_samples_per_tier": True}, TypeError, "must be an integer"),
+        ({"minimum_samples_per_tier": 1.5}, TypeError, "must be an integer"),
+        ({"max_current_success_rate": -0.1}, ValueError, "between 0 and 1"),
+        ({"min_higher_success_rate": 1.1}, ValueError, "between 0 and 1"),
+        (
+            {"min_success_rate_improvement": float("inf")},
+            ValueError,
+            "must be finite",
+        ),
+        ({"max_current_success_rate": True}, TypeError, "must be a number"),
+        ({"min_higher_success_rate": "0.8"}, TypeError, "must be a number"),
+    ],
+)
+def test_invalid_policy_values_are_rejected(
+    kwargs: dict[str, object],
+    error: type[Exception],
+    message: str,
+) -> None:
+    with pytest.raises(error, match=message):
+        AdaptiveRoutingPolicy(**kwargs)  # type: ignore[arg-type]
+
+
+def test_policy_is_immutable_and_normalizes_decimal_thresholds() -> None:
+    policy = AdaptiveRoutingPolicy(max_current_success_rate=0.6)
+
+    assert policy.max_current_success_rate == Fraction(3, 5)
+    with pytest.raises(FrozenInstanceError):
+        policy.minimum_samples_per_tier = 3  # type: ignore[misc]
 
 
 def test_insufficient_current_tier_samples_retain_static_tier() -> None:

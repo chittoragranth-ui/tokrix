@@ -27,6 +27,44 @@ _NEXT_TIER = {
 
 
 @dataclass(frozen=True)
+class AdaptiveRoutingPolicy:
+    """Immutable thresholds governing evidence-based adaptive upgrades."""
+
+    minimum_samples_per_tier: int = MINIMUM_ATTEMPTS
+    max_current_success_rate: Fraction | int | float = MAX_CURRENT_SUCCESS_RATE
+    min_higher_success_rate: Fraction | int | float = MIN_HIGHER_SUCCESS_RATE
+    min_success_rate_improvement: Fraction | int | float = (
+        MIN_SUCCESS_RATE_IMPROVEMENT
+    )
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.minimum_samples_per_tier, int)
+            or isinstance(self.minimum_samples_per_tier, bool)
+        ):
+            raise TypeError("minimum_samples_per_tier must be an integer")
+        if self.minimum_samples_per_tier < 1:
+            raise ValueError("minimum_samples_per_tier must be positive")
+
+        for field_name in (
+            "max_current_success_rate",
+            "min_higher_success_rate",
+            "min_success_rate_improvement",
+        ):
+            value = getattr(self, field_name)
+            if isinstance(value, bool) or not isinstance(
+                value, (Fraction, int, float)
+            ):
+                raise TypeError(f"{field_name} must be a number between 0 and 1")
+            if isinstance(value, float) and not math.isfinite(value):
+                raise ValueError(f"{field_name} must be finite")
+            fraction = value if isinstance(value, Fraction) else Fraction(str(value))
+            if not 0 <= fraction <= 1:
+                raise ValueError(f"{field_name} must be between 0 and 1")
+            object.__setattr__(self, field_name, fraction)
+
+
+@dataclass(frozen=True)
 class AdaptiveRoutingResult:
     """Static and evidence-informed tier recommendations."""
 
@@ -81,6 +119,7 @@ def recommend_tier(
     routing_decision: RoutingDecision,
     task_type: TaskType,
     feedback: Iterable[FeedbackRecord],
+    policy: AdaptiveRoutingPolicy | None = None,
 ) -> AdaptiveRoutingResult:
     """Recommend retaining or upgrading the static tier using feedback.
 
@@ -95,6 +134,10 @@ def recommend_tier(
         raise TypeError("routing_decision.tier must be a ModelTier")
     if not isinstance(task_type, TaskType):
         raise TypeError("task_type must be a TaskType")
+    if policy is None:
+        policy = AdaptiveRoutingPolicy()
+    elif not isinstance(policy, AdaptiveRoutingPolicy):
+        raise TypeError("policy must be an AdaptiveRoutingPolicy or None")
     score = routing_decision.budget_score
     if not isinstance(score, int) or isinstance(score, bool):
         raise TypeError("routing_decision.budget_score must be an integer")
@@ -148,26 +191,27 @@ def recommend_tier(
     higher_successes = sum(record.verification_passed for record in higher_records)
     higher_rate = higher_successes / higher_samples if higher_samples else 0.0
 
-    if current_samples < MINIMUM_ATTEMPTS:
+    if current_samples < policy.minimum_samples_per_tier:
         reason = (
             f"Retain {current_tier.value.upper()}: only {current_samples} "
-            f"current-tier attempts; {MINIMUM_ATTEMPTS} required."
+            f"current-tier attempts; {policy.minimum_samples_per_tier} required."
         )
         adjusted = False
-    elif current_successes * MAX_CURRENT_SUCCESS_RATE.denominator > (
-        current_samples * MAX_CURRENT_SUCCESS_RATE.numerator
+    elif current_successes * policy.max_current_success_rate.denominator > (
+        current_samples * policy.max_current_success_rate.numerator
     ):
         reason = (
             f"Retain {current_tier.value.upper()}: current-tier success rate "
-            f"{current_rate:.0%} is above the {float(MAX_CURRENT_SUCCESS_RATE):.0%} "
+            f"{current_rate:.0%} is above the "
+            f"{float(policy.max_current_success_rate):.0%} "
             "upgrade limit."
         )
         adjusted = False
-    elif higher_samples < MINIMUM_ATTEMPTS:
+    elif higher_samples < policy.minimum_samples_per_tier:
         reason = (
             f"Retain {current_tier.value.upper()}: only {higher_samples} "
             f"{next_tier.value.upper()} attempts for {task_type.value}; "
-            f"{MINIMUM_ATTEMPTS} required."
+            f"{policy.minimum_samples_per_tier} required."
         )
         adjusted = False
     else:
@@ -175,13 +219,14 @@ def recommend_tier(
         higher_fraction = Fraction(higher_successes, higher_samples)
         improvement = higher_fraction - current_fraction
         if (
-            higher_fraction >= MIN_HIGHER_SUCCESS_RATE
-            and improvement >= MIN_SUCCESS_RATE_IMPROVEMENT
+            higher_fraction >= policy.min_higher_success_rate
+            and improvement >= policy.min_success_rate_improvement
         ):
             reason = (
                 f"Recommend {next_tier.value.upper()}: same-task success rate "
                 f"improves from {current_rate:.0%} to {higher_rate:.0%} "
-                f"with at least {MINIMUM_ATTEMPTS} attempts per tier."
+                f"with at least {policy.minimum_samples_per_tier} attempts "
+                "per tier."
             )
             adjusted = True
         else:

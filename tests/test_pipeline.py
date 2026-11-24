@@ -6,6 +6,7 @@ from tokrix.execution import ExecutionRequest, ExecutionResponse
 from tokrix.feedback import FeedbackCollector, FeedbackRecord
 from tokrix.intelligence.classifier import TaskType
 from tokrix.pipeline import PipelineResult, TokrixPipeline, orchestrator
+from tokrix.routing import AdaptiveRoutingPolicy
 from tokrix.routing.router import ModelTier
 
 
@@ -137,6 +138,61 @@ def test_historical_feedback_recommends_and_executes_higher_tier() -> None:
     assert result.selected_tier is ModelTier.MEDIUM
     assert low.received_request is None
     assert medium.received_request is not None
+
+
+def test_pipeline_uses_configured_adaptive_policy() -> None:
+    collector = SeededFeedbackCollector(
+        [
+            *(_feedback_record(ModelTier.LOW, True) for _ in range(3)),
+            *(_feedback_record(ModelTier.LOW, False) for _ in range(2)),
+            *(_feedback_record(ModelTier.MEDIUM, True) for _ in range(3)),
+            *(_feedback_record(ModelTier.MEDIUM, False) for _ in range(2)),
+        ]
+    )
+    pipeline = TokrixPipeline(
+        {
+            ModelTier.LOW: FakeProvider("low response"),
+            ModelTier.MEDIUM: FakeProvider("medium response"),
+        },
+        feedback_collector=collector,
+        adaptive_policy=AdaptiveRoutingPolicy(
+            min_higher_success_rate=0.6,
+            min_success_rate_improvement=0,
+        ),
+    )
+
+    result = pipeline.run("What is photosynthesis?", BudgetMode.COST_OPTIMIZED)
+
+    assert result.adaptive_routing_result is not None
+    assert result.adaptive_routing_result.adjusted is True
+    assert result.selected_tier is ModelTier.MEDIUM
+
+
+def test_disabling_adaptive_routing_keeps_static_tier_and_records_feedback() -> None:
+    collector = SeededFeedbackCollector(
+        [
+            *(_feedback_record(ModelTier.LOW, False) for _ in range(5)),
+            *(_feedback_record(ModelTier.MEDIUM, True) for _ in range(5)),
+        ]
+    )
+    initial_count = len(collector.snapshot())
+    low = FakeProvider("low response")
+    medium = FakeProvider("medium response")
+    pipeline = TokrixPipeline(
+        {ModelTier.LOW: low, ModelTier.MEDIUM: medium},
+        feedback_collector=collector,
+        adaptive_routing_enabled=False,
+    )
+
+    result = pipeline.run("What is photosynthesis?", BudgetMode.COST_OPTIMIZED)
+
+    assert result.routing_decision.tier is ModelTier.LOW
+    assert result.recommended_tier is ModelTier.LOW
+    assert result.selected_tier is ModelTier.LOW
+    assert result.adaptive_routing_result is None
+    assert low.received_request is not None
+    assert medium.received_request is None
+    assert len(collector.snapshot()) == initial_count + 1
 
 
 def test_completed_run_feedback_can_influence_a_later_run() -> None:

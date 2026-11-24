@@ -21,7 +21,11 @@ from tokrix.intelligence.classifier import (
 )
 from tokrix.intelligence.complexity import ComplexityResult, analyze_complexity
 from tokrix.intelligence.token_estimator import estimate_tokens
-from tokrix.routing.adaptive import AdaptiveRoutingResult, recommend_tier
+from tokrix.routing.adaptive import (
+    AdaptiveRoutingPolicy,
+    AdaptiveRoutingResult,
+    recommend_tier,
+)
 from tokrix.routing.router import ModelTier, RoutingDecision, route_model
 from tokrix.verification.verifier import VerificationResult, verify_response
 
@@ -138,6 +142,8 @@ class TokrixPipeline:
         self,
         providers: Mapping[ModelTier, ModelProvider],
         feedback_collector: _FeedbackStore | None = None,
+        adaptive_routing_enabled: bool = True,
+        adaptive_policy: AdaptiveRoutingPolicy | None = None,
     ) -> None:
         if not isinstance(providers, Mapping):
             raise TypeError("providers must be a mapping from ModelTier to providers")
@@ -148,6 +154,12 @@ class TokrixPipeline:
             raise TypeError(
                 "feedback_collector must implement snapshot and record"
             )
+        if not isinstance(adaptive_routing_enabled, bool):
+            raise TypeError("adaptive_routing_enabled must be a bool")
+        if adaptive_policy is not None and not isinstance(
+            adaptive_policy, AdaptiveRoutingPolicy
+        ):
+            raise TypeError("adaptive_policy must be an AdaptiveRoutingPolicy or None")
 
         validated: dict[ModelTier, ModelProvider] = {}
         for tier, provider in providers.items():
@@ -160,6 +172,8 @@ class TokrixPipeline:
             validated[tier] = provider
         self._providers = validated
         self._feedback_collector = feedback_collector
+        self._adaptive_routing_enabled = adaptive_routing_enabled
+        self._adaptive_policy = adaptive_policy
 
     def run(
         self,
@@ -191,12 +205,16 @@ class TokrixPipeline:
         )
         routing = route_model(budget)
         adaptive_routing_result = None
-        if self._feedback_collector is not None:
+        if (
+            self._adaptive_routing_enabled
+            and self._feedback_collector is not None
+        ):
             historical_feedback = self._feedback_collector.snapshot()
             adaptive_routing_result = recommend_tier(
                 routing,
                 classification.task_type,
                 historical_feedback,
+                self._adaptive_policy,
             )
         tier = (
             adaptive_routing_result.recommended_tier
