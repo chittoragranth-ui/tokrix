@@ -12,6 +12,7 @@ MODEL_NAME = "gpt-4o-mini"
 
 
 def main() -> None:
+    """Run explicitly configured empirical cases; provider calls may be billed."""
     provider = OpenAIProvider(model=MODEL_NAME)
     config = EmpiricalBenchmarkConfig(
         cases=(

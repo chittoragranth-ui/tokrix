@@ -1,31 +1,107 @@
 Tokrix
 ====
 
-Adaptive inference and resource allocation infrastructure for Python.
+Tokrix is a Python library for adaptive inference and resource allocation. It
+helps applications analyze prompts, choose an initial model tier, execute and
+verify responses, and optionally use task-specific feedback to improve future
+routing decisions.
 
-Basic pipeline example
-----------------------
+Tokrix keeps its core standard-library-first and makes provider execution
+explicit. It does not make model calls during import or ordinary routing and
+synthetic evaluation.
 
-Install the project and the optional OpenAI provider dependency:
+Features
+--------
+
+- **Prompt analysis:** heuristic task classification, complexity scoring, and
+  approximate token estimation.
+- **Resource allocation:** deterministic budget scoring and LOW/MEDIUM/HIGH
+  routing.
+- **Execution workflow:** provider abstraction, verification, retry and
+  escalation, and in-memory telemetry.
+- **Adaptive routing:** optional, configurable upgrades informed by completed
+  task-specific feedback; static routing remains the fallback.
+- **Evaluation:** deterministic offline routing/performance datasets and a
+  separate, explicitly invoked empirical provider benchmark.
+
+Installation
+------------
+
+Tokrix requires Python 3.11 or newer and has no mandatory runtime dependencies.
+From a repository checkout, install the package with:
 
 ```bash
-python -m pip install -e ".[openai]"
+python3 -m pip install .
 ```
 
-Set the API key using the environment variable used by the official OpenAI SDK:
+For development, including tests and linting:
 
 ```bash
+python3 -m pip install -e ".[dev]"
+```
+
+The OpenAI provider is optional. Install it only when you intend to use that
+provider:
+
+```bash
+python3 -m pip install ".[openai]"
+```
+
+Quickstart and architecture
+---------------------------
+
+The pipeline accepts provider implementations through the existing
+`ModelProvider` interface. It analyzes and classifies a prompt, estimates its
+size, selects a budget and starting tier, executes through a provider, verifies
+the response, and may retry or escalate according to the result. When enabled
+and supplied with a `FeedbackCollector`, adaptive routing uses prior
+task-specific outcomes to choose at most a one-tier upgrade before execution.
+Completed runs can then contribute feedback for later requests.
+
+The following example makes a real provider call. It requires an OpenAI API key
+and may incur charges; importing the provider or constructing a pipeline does
+not itself make a request. See `examples/basic_pipeline.py` for the complete
+example:
+
+```bash
+python3 -m pip install ".[openai]"
 export OPENAI_API_KEY="your-api-key"
+python3 examples/basic_pipeline.py
 ```
 
-Run the example from the project root:
+For deterministic prompt analysis and routing without a provider, the
+intelligence APIs are available from `tokrix.intelligence`:
 
-```bash
-python examples/basic_pipeline.py
+```python
+from tokrix.budget import BudgetMode, allocate_budget
+from tokrix.intelligence import analyze_complexity, classify_task, estimate_tokens
+from tokrix.routing import route_model
+
+prompt = "Implement a Python function that validates a cache key."
+task = classify_task(prompt)
+complexity = analyze_complexity(prompt)
+budget = allocate_budget(
+    complexity.score,
+    task.task_type,
+    estimate_tokens(prompt),
+    mode=BudgetMode.BALANCED,
+)
+decision = route_model(budget)
+print(decision.tier, decision.reason)
 ```
 
-The model names in `examples/basic_pipeline.py` are constants and can be changed
-to models available to your OpenAI account.
+The classifier, complexity score, and token estimate are deterministic
+heuristics, not calibrated measures of task difficulty, compute requirements,
+or tokenizer output.
+
+OpenAI-backed pipeline example
+------------------------------
+
+`examples/basic_pipeline.py` configures one OpenAI provider for each model
+tier. The quickstart above includes the install and run commands. The model
+names are constants in the example and can be changed to models available to
+your OpenAI account. Running it sends the prompt to a provider and may incur
+API charges.
 
 Feedback-driven adaptive routing
 --------------------------------
@@ -204,3 +280,33 @@ An evaluator receives the benchmark case and provider response and must return
 a finite quality score from 0 to 100. Its rubric remains the caller's
 responsibility; Tokrix does not infer quality from response length or successful
 execution.
+
+Examples
+--------
+
+| Example | What it demonstrates | External calls / credentials |
+| --- | --- | --- |
+| `examples/basic_pipeline.py` | End-to-end pipeline using configured OpenAI models | Yes; OpenAI SDK and API key; may incur charges |
+| `examples/routing_benchmark.py` | Synthetic static/adaptive routing comparison | No; deterministic and offline |
+| `examples/routing_performance_benchmark.py` | Synthetic quality, normalized cost, and latency comparison | No; deterministic and offline |
+| `examples/empirical_provider_benchmark.py` | Explicit repeated measurements through OpenAI | Yes; OpenAI SDK and API key; may incur charges |
+
+Run either offline example from the repository root with
+`python3 examples/<name>.py`. The provider-backed examples are ordinary
+scripts: review their configuration before running them. Importing them does
+not execute `main()` or send a request.
+
+Limitations
+-----------
+
+- Task classification, complexity, and token counts use simple heuristics;
+  they are not calibrated predictors.
+- Adaptive routing is driven by in-memory feedback and only learns from
+  completed, task-specific outcomes available to the process.
+- Offline evaluation uses synthetic assumptions and must not be interpreted
+  as real provider quality, latency, or monetary cost.
+- Empirical latency and token usage depend on the configured provider and
+  environment. Provider-reported costs may be absent, and estimates require
+  pricing explicitly supplied by the caller.
+- Quality scores require a caller-provided evaluator and rubric; Tokrix does
+  not guarantee the quality or factual correctness of generated responses.

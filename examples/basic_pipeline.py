@@ -1,4 +1,4 @@
-"""Minimal example of Tokrix's complete prompt pipeline."""
+"""OpenAI-backed pipeline example; running it makes a potentially billable call."""
 
 from tokrix.budget.adaptive import BudgetMode
 from tokrix.execution.providers import OpenAIProvider
@@ -14,6 +14,7 @@ PROMPT = "Explain the difference between a list and a dictionary in Python."
 
 
 def main() -> None:
+    """Run one prompt through explicitly configured OpenAI model tiers."""
     providers = {
         ModelTier.LOW: OpenAIProvider(model=LOW_MODEL),
         ModelTier.MEDIUM: OpenAIProvider(model=MEDIUM_MODEL),
