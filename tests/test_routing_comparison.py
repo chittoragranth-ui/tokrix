@@ -197,13 +197,14 @@ def test_comparison_result_and_distribution_are_immutable() -> None:
 
 
 def test_comparison_uses_existing_evaluator_and_dataset_results() -> None:
+    dataset = get_benchmark_dataset()
     result = evaluate_routing(
-        entry.benchmark_case for entry in get_benchmark_dataset()
+        entry.benchmark_case for entry in dataset
     )
 
     comparison = compare_routing_results(result)
 
-    assert comparison.case_count == result.case_count == 15
+    assert comparison.case_count == result.case_count == len(dataset)
     assert comparison.outcome_comparison.improved_count > 0
     assert comparison.outcome_comparison.degraded_count > 0
     assert sum(comparison.tier_distribution_differences.values()) == 0

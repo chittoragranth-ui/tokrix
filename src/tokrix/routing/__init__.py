@@ -26,6 +26,18 @@ from tokrix.routing.dataset import (
     get_benchmark_dataset,
     validate_benchmark_dataset,
 )
+from tokrix.routing.empirical import (
+    MAX_BENCHMARK_REPETITIONS,
+    BenchmarkTarget,
+    EmpiricalBenchmarkCase,
+    EmpiricalBenchmarkConfig,
+    EmpiricalBenchmarkResult,
+    EmpiricalProviderSummary,
+    EmpiricalRunMeasurement,
+    MetricAggregate,
+    TokenPricing,
+    run_empirical_benchmark,
+)
 from tokrix.routing.performance import (
     PerformanceBenchmarkCase,
     RoutingPerformanceCaseResult,
@@ -38,11 +50,19 @@ from tokrix.routing.performance_dataset import get_performance_benchmark_dataset
 from tokrix.routing.router import ModelTier, RoutingDecision, route_model
 
 __all__ = [
+    "MAX_BENCHMARK_REPETITIONS",
     "AdaptiveRoutingExplanation",
     "AdaptiveRoutingPolicy",
     "AdaptiveRoutingReason",
     "AdaptiveRoutingResult",
     "BenchmarkDatasetEntry",
+    "BenchmarkTarget",
+    "EmpiricalBenchmarkCase",
+    "EmpiricalBenchmarkConfig",
+    "EmpiricalBenchmarkResult",
+    "EmpiricalProviderSummary",
+    "EmpiricalRunMeasurement",
+    "MetricAggregate",
     "ModelTier",
     "PerformanceBenchmarkCase",
     "ResourceDemand",
@@ -57,6 +77,7 @@ __all__ = [
     "RoutingPerformanceResult",
     "RoutingStrategyMetrics",
     "TierPerformance",
+    "TokenPricing",
     "WorkloadGroup",
     "compare_routing_results",
     "evaluate_routing",
@@ -65,5 +86,6 @@ __all__ = [
     "get_performance_benchmark_dataset",
     "recommend_tier",
     "route_model",
+    "run_empirical_benchmark",
     "validate_benchmark_dataset",
 ]

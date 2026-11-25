@@ -26,16 +26,28 @@ _TIER_COST_PROXY = MappingProxyType(
 class _ImmutableRoutingDecision(RoutingDecision):
     """Routing decision snapshot that cannot be changed through the case."""
 
-    __slots__ = ()
+    __slots__ = ("_budget_score", "_reason", "_tier")
 
     def __init__(self, decision: RoutingDecision) -> None:
-        object.__setattr__(self, "tier", decision.tier)
-        object.__setattr__(self, "budget_score", decision.budget_score)
-        object.__setattr__(self, "reason", decision.reason)
+        object.__setattr__(self, "_tier", decision.tier)
+        object.__setattr__(self, "_budget_score", decision.budget_score)
+        object.__setattr__(self, "_reason", decision.reason)
 
     def __setattr__(self, name: str, value: object) -> None:
         del value
         raise FrozenInstanceError(f"cannot assign to field {name!r}")
+
+    @property
+    def tier(self) -> ModelTier:
+        return self._tier
+
+    @property
+    def budget_score(self) -> int:
+        return self._budget_score
+
+    @property
+    def reason(self) -> str:
+        return self._reason
 
 
 @dataclass(frozen=True)

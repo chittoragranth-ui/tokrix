@@ -319,6 +319,39 @@ def test_static_decision_cannot_be_mutated_after_case_construction() -> None:
     assert result.case_results[0].static_tier is ModelTier.LOW
 
 
+def test_case_nested_state_cannot_be_mutated_through_mapping_or_dict() -> None:
+    outcomes = {
+        ModelTier.LOW: True,
+        ModelTier.MEDIUM: False,
+        ModelTier.HIGH: False,
+    }
+    decision = RoutingDecision(
+        tier=ModelTier.LOW,
+        budget_score=20,
+        reason="test",
+    )
+    case = RoutingBenchmarkCase(
+        task_type=TaskType.CODING,
+        static_decision=decision,
+        historical_feedback=(),
+        expected_outcomes=outcomes,
+    )
+    outcomes[ModelTier.LOW] = False
+
+    with pytest.raises(TypeError):
+        case.expected_outcomes[ModelTier.LOW] = False  # type: ignore[index]
+
+    decision_state = case.static_decision.__dict__
+    decision_state["tier"] = ModelTier.HIGH
+    decision_state["budget_score"] = 99
+    decision_state["reason"] = "mutated"
+
+    assert case.expected_outcomes[ModelTier.LOW] is True
+    assert case.static_decision.tier is ModelTier.LOW
+    assert case.static_decision.budget_score == 20
+    assert case.static_decision.reason == "test"
+
+
 def test_case_and_results_are_immutable() -> None:
     outcomes = {
         ModelTier.LOW: True,

@@ -60,6 +60,23 @@ def test_sdk_output_text_is_converted_to_execution_response() -> None:
     assert result == ExecutionResponse(content="Generated text")
 
 
+def test_sdk_usage_metadata_is_preserved_in_execution_response() -> None:
+    client = FakeOpenAIClient(
+        SimpleNamespace(
+            output_text="Generated text",
+            usage=SimpleNamespace(input_tokens=12, output_tokens=7, total_tokens=19),
+        )
+    )
+    provider = OpenAIProvider(model="example-model", client=client)
+
+    result = provider.execute(ExecutionRequest(prompt="Hello"))
+
+    assert result.input_tokens == 12
+    assert result.output_tokens == 7
+    assert result.total_tokens == 19
+    assert result.provider_reported_cost is None
+
+
 def test_api_exception_propagates_unchanged() -> None:
     error = RuntimeError("API request failed")
     provider = OpenAIProvider(

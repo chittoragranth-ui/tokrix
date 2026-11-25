@@ -174,3 +174,33 @@ Higher quality may come with greater modeled cost or latency, while scenarios
 where LOW already meets the expected outcome can show no modeled quality gain
 from higher tiers. Cost units are normalized within this synthetic dataset,
 not provider prices. Provider benchmarking is outside this offline example.
+
+### Empirical provider benchmarking (opt-in)
+
+M25's evaluation is synthetic and offline; M26's empirical benchmark explicitly
+executes prompts through configured providers. It makes no calls during import,
+configuration construction, or ordinary tests. Calling
+`run_empirical_benchmark(config)` is the point that performs provider
+executions. Running the example requires the optional OpenAI SDK and credentials
+and may incur API charges:
+
+```bash
+python3 -m pip install -e ".[openai]"
+export OPENAI_API_KEY="your-api-key"
+python3 examples/empirical_provider_benchmark.py
+```
+
+Configure explicit targets, cases, repetitions, and optionally a quality
+evaluator or model-specific `TokenPricing`. Latency is measured around each
+execution; token counts are collected only when a response exposes them.
+Provider-reported cost is kept separate from estimates computed using supplied
+input/output prices. If neither source is available, cost remains `None`.
+Quality is `None` unless a caller supplies a scoring evaluator; latency, token
+usage, and execution success alone do not measure answer quality. Aggregates
+include available/total measurement counts so partial data is visible, and
+individual runs retain failure and evaluation-error details.
+
+An evaluator receives the benchmark case and provider response and must return
+a finite quality score from 0 to 100. Its rubric remains the caller's
+responsibility; Tokrix does not infer quality from response length or successful
+execution.

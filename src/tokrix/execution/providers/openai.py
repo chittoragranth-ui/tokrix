@@ -61,4 +61,11 @@ class OpenAIProvider:
         if not isinstance(output_text, str):
             raise TypeError("OpenAI response output_text must be a string")
 
-        return ExecutionResponse(content=output_text)
+        usage = getattr(response, "usage", None)
+        return ExecutionResponse(
+            content=output_text,
+            input_tokens=getattr(usage, "input_tokens", None),
+            output_tokens=getattr(usage, "output_tokens", None),
+            total_tokens=getattr(usage, "total_tokens", None),
+            provider_reported_cost=getattr(response, "cost", None),
+        )
