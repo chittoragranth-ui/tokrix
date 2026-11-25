@@ -173,6 +173,22 @@ original static routing tier is used and no recommendation is computed, but an
 available collector still records the run. Insufficient task-specific evidence
 retains the static tier. The collector stores feedback only in memory.
 
+Offline end-to-end demonstration
+-------------------------------
+
+`examples/full_pipeline_demo.py` shows prompt analysis, token estimation,
+budgeting, static and adaptive routing, provider execution, verification,
+retry and escalation, feedback collection, routing explanations, and telemetry
+in one offline run. Its deterministic fake LOW-tier provider returns an empty
+response, so verification triggers a same-tier retry and then escalation to
+MEDIUM. Five completed runs build task-specific feedback before a later run
+demonstrates the adaptive upgrade. It needs no credentials, optional provider
+package, network access, or paid API calls:
+
+```bash
+python3 examples/full_pipeline_demo.py
+```
+
 Offline routing benchmarks
 --------------------------
 
@@ -287,6 +303,7 @@ Examples
 | Example | What it demonstrates | External calls / credentials |
 | --- | --- | --- |
 | `examples/basic_pipeline.py` | End-to-end pipeline using configured OpenAI models | Yes; OpenAI SDK and API key; may incur charges |
+| `examples/full_pipeline_demo.py` | Complete offline pipeline, retry/escalation, feedback, adaptive routing, and telemetry | No; deterministic fake providers |
 | `examples/routing_benchmark.py` | Synthetic static/adaptive routing comparison | No; deterministic and offline |
 | `examples/routing_performance_benchmark.py` | Synthetic quality, normalized cost, and latency comparison | No; deterministic and offline |
 | `examples/empirical_provider_benchmark.py` | Explicit repeated measurements through OpenAI | Yes; OpenAI SDK and API key; may incur charges |
@@ -310,3 +327,9 @@ Limitations
   pricing explicitly supplied by the caller.
 - Quality scores require a caller-provided evaluator and rubric; Tokrix does
   not guarantee the quality or factual correctness of generated responses.
+
+License
+-------
+
+Tokrix is licensed under the MIT License. See the root-level `LICENSE` file
+for the complete license text.

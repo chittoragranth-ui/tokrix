@@ -6,6 +6,12 @@ from tokrix.intelligence.complexity import ComplexityLevel, ComplexityResult
 from tokrix.intelligence.token_estimator import estimate_tokens
 
 
+def test_package_version_is_v1() -> None:
+    import tokrix
+
+    assert tokrix.__version__ == "1.0.0"
+
+
 def test_intelligence_package_exports_its_public_apis() -> None:
     assert set(intelligence.__all__) == {
         "ClassificationResult",
