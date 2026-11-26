@@ -94,6 +94,28 @@ The classifier, complexity score, and token estimate are deterministic
 heuristics, not calibrated measures of task difficulty, compute requirements,
 or tokenizer output.
 
+Architecture
+------------
+
+![Tokrix architecture diagram](docs/assets/tokrix_architecture.png)
+
+The pipeline analyzes a prompt, allocates a budget, selects a static baseline
+tier, and can apply an optional feedback-informed recommendation before
+execution. Each execution is verified; failed responses can be retried or
+escalated. A configured feedback collector records completed runs for future
+task-specific recommendations. Applications may separately pass a
+`PipelineResult` to `MetricsAggregator`; it aggregates metrics in memory and
+does not persist execution history.
+
+Offline synthetic evaluation is a separate workflow from empirical provider
+benchmarking. The former uses controlled scenario assumptions; the latter
+executes only when explicitly invoked with configured providers and may incur
+provider charges.
+
+Contributors can inspect or edit the
+[Mermaid source](docs/architecture/tokrix_architecture.mmd) or
+[SVG diagram](docs/assets/tokrix_architecture.svg).
+
 OpenAI-backed pipeline example
 ------------------------------
 

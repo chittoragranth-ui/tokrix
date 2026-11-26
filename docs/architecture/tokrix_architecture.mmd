@@ -1,0 +1,57 @@
+flowchart TB
+    A["Incoming Prompt / Request"]
+
+    subgraph ANALYSIS["1. Request Analysis"]
+        B["Task Classifier"]
+        C["Complexity Analyzer"]
+        D["Token Estimator"]
+        A --> B
+        A --> C
+        A --> D
+    end
+
+    B --> E["Budget Allocation"]
+    C --> E
+    D --> E
+
+    subgraph ROUTING["2. Budgeting and Routing"]
+        E --> F["Static Router<br/>Budget score to baseline tier"]
+        F --> G["Adaptive Recommendation<br/>Optional; at most one-tier upgrade"]
+        F -. "used when adaptation is disabled or evidence is insufficient" .-> I["Selected Tier"]
+        G --> I
+    end
+
+    subgraph EXECUTION["3. Execution and Verification"]
+        I --> J["Execution Engine<br/>Validates request and provider response"]
+        J --> K["ModelProvider Protocol"]
+        K --> L["Configured Provider<br/>Fake, OpenAI, or another implementation"]
+        L --> M["Response Verification"]
+        M -->|Passed| N["PipelineResult"]
+        M -->|Failed| O["Retry / Escalation Decision"]
+        O -->|Retry same tier| J
+        O -->|Escalate to next tier| J
+        O -->|Stopped or exhausted| N
+    end
+
+    subgraph OBSERVABILITY["4. Feedback and Metrics"]
+        H["Feedback Collector<br/>In-memory, task-specific records"]
+        N -->|When configured| H
+        N -. "application may call record(result)" .-> P["MetricsAggregator<br/>In-memory aggregate metrics"]
+        H -. "snapshot for next run" .-> G
+    end
+
+    subgraph EVALUATION["5. Evaluation Workflows"]
+        Q["Synthetic Scenario Dataset"] --> R["Offline Routing Evaluation"]
+        R --> S["Synthetic Reports<br/>Routing, quality, normalized cost, latency"]
+        T["Explicit Benchmark Config"] --> U["Empirical Provider Benchmark<br/>Executes configured cases and targets"]
+        U --> V["Measured Run Results<br/>Unavailable metrics remain unavailable"]
+    end
+
+    classDef core fill:#14243a,stroke:#476887,color:#f5f8fc,stroke-width:1.5px;
+    classDef decision fill:#193d42,stroke:#4b9b91,color:#f5fffd,stroke-width:1.5px;
+    classDef feedback fill:#3b2d50,stroke:#9272bb,color:#fbf8ff,stroke-width:1.5px;
+    classDef eval fill:#3c3540,stroke:#a58a63,color:#fffaf2,stroke-width:1.5px;
+    class A,B,C,D,J,K,L,M,N core;
+    class E,F,G,I decision;
+    class H,P feedback;
+    class Q,R,S,T,U,V eval;

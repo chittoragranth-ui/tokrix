@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1260" viewBox="0 0 1800 1260">
+<defs>
+  <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L9,3 z" fill="#8295ad"/>
+  </marker>
+  <marker id="dashArrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L9,3 z" fill="#9b82c4"/>
+  </marker>
+  <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+    <feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#07111f" flood-opacity=".35"/>
+  </filter>
+</defs>
+<rect width="1800" height="1260" fill="#0b1220"/>
+<text x="82" y="72" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="38" font-weight="700">TOKRIX</text>
+<text x="82" y="111" fill="#a9b8ca" font-family="Inter,Arial,sans-serif" font-size="20">Adaptive inference &amp; resource allocation · high-level architecture</text>
+
+<g filter="url(#shadow)"><rect x="680" y="145" width="440" height="76" rx="15" fill="#203650" stroke="#7196bb" stroke-width="2"/>
+<text x="900.0" y="190.0" text-anchor="middle" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="650">Incoming Prompt / Request</text>
+</g>
+<rect x="90" y="260" width="1620" height="188" rx="22" fill="#101d2e" stroke="#38516d" stroke-width="2"/>
+<text x="114" y="294" fill="#a9c1dc" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="700" letter-spacing="1.4">1  REQUEST ANALYSIS</text>
+<g filter="url(#shadow)"><rect x="170" y="320" width="330" height="78" rx="15" fill="#172b42" stroke="#52708f" stroke-width="2"/>
+<text x="335.0" y="366.0" text-anchor="middle" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="650">Prompt Text</text>
+</g>
+<g filter="url(#shadow)"><rect x="625" y="320" width="300" height="78" rx="15" fill="#172b42" stroke="#52708f" stroke-width="2"/>
+<text x="775.0" y="351" text-anchor="middle" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="19" font-weight="650">Task · Complexity · Token</text>
+<text x="775.0" y="378" text-anchor="middle" fill="#8db4dc" font-family="Inter,Arial,sans-serif" font-size="14">Classifier · Analyzer · Estimator</text>
+</g>
+<g filter="url(#shadow)"><rect x="1110" y="320" width="470" height="78" rx="15" fill="#172b42" stroke="#52708f" stroke-width="2"/>
+<text x="1345.0" y="351" text-anchor="middle" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="19" font-weight="650">Analysis Signals</text>
+<text x="1345.0" y="378" text-anchor="middle" fill="#8db4dc" font-family="Inter,Arial,sans-serif" font-size="14">Task type · complexity · token estimate</text>
+</g>
+<polyline points="900,221 900,290 335,290 335,320" fill="none" stroke="#8295ad" stroke-width="3" marker-end="url(#arrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="500,359 625,359" fill="none" stroke="#8295ad" stroke-width="3" marker-end="url(#arrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="925,359 1110,359" fill="none" stroke="#8295ad" stroke-width="3" marker-end="url(#arrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="90" y="480" width="1620" height="180" rx="22" fill="#102522" stroke="#3e766f" stroke-width="2"/>
+<text x="114" y="514" fill="#a9c1dc" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="700" letter-spacing="1.4">2  BUDGETING &amp; ROUTING</text>
+<g filter="url(#shadow)"><rect x="170" y="540" width="390" height="78" rx="15" fill="#183a39" stroke="#4b9289" stroke-width="2"/>
+<text x="365.0" y="571" text-anchor="middle" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="19" font-weight="650">Budget Allocation</text>
+<text x="365.0" y="598" text-anchor="middle" fill="#9cddd3" font-family="Inter,Arial,sans-serif" font-size="14">Score from mode and heuristics</text>
+</g>
+<g filter="url(#shadow)"><rect x="710" y="540" width="420" height="78" rx="15" fill="#183a39" stroke="#4b9289" stroke-width="2"/>
+<text x="920.0" y="571" text-anchor="middle" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="19" font-weight="650">Model Routing Engine</text>
+<text x="920.0" y="598" text-anchor="middle" fill="#9cddd3" font-family="Inter,Arial,sans-serif" font-size="14">Select LOW / MEDIUM / HIGH tier</text>
+</g>
+<g filter="url(#shadow)"><rect x="1260" y="520" width="350" height="54" rx="15" fill="#1b4642" stroke="#4b9289" stroke-width="2"/>
+<text x="1435.0" y="551" text-anchor="middle" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="19" font-weight="650">Static Routing Policy</text>
+<text x="1435.0" y="578" text-anchor="middle" fill="#9cddd3" font-family="Inter,Arial,sans-serif" font-size="14">Baseline decision</text>
+</g>
+<g filter="url(#shadow)"><rect x="1260" y="590" width="350" height="54" rx="15" fill="#1b4642" stroke="#4b9289" stroke-width="2"/>
+<text x="1435.0" y="621" text-anchor="middle" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="19" font-weight="650">Adaptive Routing Policy</text>
+<text x="1435.0" y="648" text-anchor="middle" fill="#9cddd3" font-family="Inter,Arial,sans-serif" font-size="14">Optional one-tier upgrade</text>
+</g>
+<polyline points="900,398 900,460 365,460 365,540" fill="none" stroke="#8295ad" stroke-width="3" marker-end="url(#arrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="560,579 710,579" fill="none" stroke="#8295ad" stroke-width="3" marker-end="url(#arrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="1130,579 1190,579 1190,547 1260,547" fill="none" stroke="#70b9ad" stroke-width="3" stroke-dasharray="9 8" marker-end="url(#arrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="1260,617 1190,617 1190,605 1130,605" fill="none" stroke="#70b9ad" stroke-width="3" stroke-dasharray="9 8" marker-end="url(#arrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="90" y="690" width="1620" height="260" rx="22" fill="#111f32" stroke="#496d9b" stroke-width="2"/>
+<text x="114" y="724" fill="#a9c1dc" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="700" letter-spacing="1.4">3  EXECUTION &amp; QUALITY CONTROL</text>
+<g filter="url(#shadow)"><rect x="145" y="775" width="260" height="84" rx="15" fill="#1b3554" stroke="#628ab5" stroke-width="2"/>
+<text x="275.0" y="806" text-anchor="middle" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="19" font-weight="650">Execution Engine</text>
+<text x="275.0" y="833" text-anchor="middle" fill="#8db4dc" font-family="Inter,Arial,sans-serif" font-size="14">Validates and calls provider</text>
+</g>
+<g filter="url(#shadow)"><rect x="500" y="775" width="260" height="84" rx="15" fill="#1b3554" stroke="#628ab5" stroke-width="2"/>
+<text x="630.0" y="806" text-anchor="middle" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="19" font-weight="650">Provider Protocol</text>
+<text x="630.0" y="833" text-anchor="middle" fill="#8db4dc" font-family="Inter,Arial,sans-serif" font-size="14">Common provider contract</text>
+</g>
+<g filter="url(#shadow)"><rect x="855" y="775" width="300" height="84" rx="15" fill="#1b3554" stroke="#628ab5" stroke-width="2"/>
+<text x="1005.0" y="806" text-anchor="middle" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="19" font-weight="650">Configured Provider</text>
+<text x="1005.0" y="833" text-anchor="middle" fill="#8db4dc" font-family="Inter,Arial,sans-serif" font-size="14">Fake / optional OpenAI</text>
+</g>
+<g filter="url(#shadow)"><rect x="1250" y="775" width="300" height="84" rx="15" fill="#1b3554" stroke="#628ab5" stroke-width="2"/>
+<text x="1400.0" y="806" text-anchor="middle" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="19" font-weight="650">Response Verification</text>
+<text x="1400.0" y="833" text-anchor="middle" fill="#8db4dc" font-family="Inter,Arial,sans-serif" font-size="14">Accept or reject response</text>
+</g>
+<g filter="url(#shadow)"><rect x="610" y="885" width="370" height="48" rx="15" fill="#49351f" stroke="#b58b54" stroke-width="2"/>
+<text x="795.0" y="916" text-anchor="middle" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="19" font-weight="650">Retry &amp; Escalation Engine</text>
+<text x="795.0" y="943" text-anchor="middle" fill="#e5c28d" font-family="Inter,Arial,sans-serif" font-size="14">Retry / upgrade tier / stop</text>
+</g>
+<g filter="url(#shadow)"><rect x="1450" y="885" width="190" height="48" rx="15" fill="#203650" stroke="#7196bb" stroke-width="2"/>
+<text x="1545.0" y="916.0" text-anchor="middle" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="650">PipelineResult</text>
+</g>
+<polyline points="920,618 920,670 275,670 275,775" fill="none" stroke="#8295ad" stroke-width="3" marker-end="url(#arrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="405,817 500,817" fill="none" stroke="#8295ad" stroke-width="3" marker-end="url(#arrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="760,817 855,817" fill="none" stroke="#8295ad" stroke-width="3" marker-end="url(#arrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="1155,817 1250,817" fill="none" stroke="#8295ad" stroke-width="3" marker-end="url(#arrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="1400,859 1400,870 980,870 980,909" fill="none" stroke="#d0a46b" stroke-width="3" marker-end="url(#arrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="610,909 470,909 470,930 275,930 275,859" fill="none" stroke="#d0a46b" stroke-width="3" marker-end="url(#arrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="980,909 1450,909" fill="none" stroke="#8295ad" stroke-width="3" marker-end="url(#arrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="1550,817 1590,817 1590,885" fill="none" stroke="#8295ad" stroke-width="3" marker-end="url(#arrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="90" y="990" width="760" height="205" rx="22" fill="#211a2d" stroke="#735c91" stroke-width="2"/>
+<text x="114" y="1024" fill="#a9c1dc" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="700" letter-spacing="1.4">4  FEEDBACK &amp; OPTIONAL METRICS</text>
+<g filter="url(#shadow)"><rect x="130" y="1060" width="190" height="78" rx="15" fill="#3a2b4d" stroke="#9272bb" stroke-width="2"/>
+<text x="225.0" y="1091" text-anchor="middle" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="650">Feedback Collector</text>
+<text x="225.0" y="1118" text-anchor="middle" fill="#d0b9ed" font-family="Inter,Arial,sans-serif" font-size="13">Configured per-run records</text>
+</g>
+<g filter="url(#shadow)"><rect x="365" y="1060" width="205" height="78" rx="15" fill="#3a2b4d" stroke="#9272bb" stroke-width="2"/>
+<text x="467.5" y="1091" text-anchor="middle" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="650">Metrics Aggregator</text>
+<text x="467.5" y="1118" text-anchor="middle" fill="#d0b9ed" font-family="Inter,Arial,sans-serif" font-size="13">Caller-recorded aggregates</text>
+</g>
+<polyline points="1545,933 1545,960 225,960 225,1060" fill="none" stroke="#8295ad" stroke-width="3" marker-end="url(#arrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="1545,933 1545,975 467,975 467,1060" fill="none" stroke="#aa91ce" stroke-width="3" stroke-dasharray="9 8" marker-end="url(#dashArrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="320,1099 345,1099 345,1210 1740,1210 1740,617 1610,617" fill="none" stroke="#aa91ce" stroke-width="3" stroke-dasharray="9 8" marker-end="url(#dashArrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="910" y="990" width="800" height="205" rx="22" fill="#292318" stroke="#8a7554" stroke-width="2"/>
+<text x="934" y="1024" fill="#a9c1dc" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="700" letter-spacing="1.4">5  OFFLINE EVALUATION · SEPARATE WORKFLOW</text>
+<g filter="url(#shadow)"><rect x="950" y="1060" width="210" height="78" rx="15" fill="#443722" stroke="#b49360" stroke-width="2"/>
+<text x="1055.0" y="1091" text-anchor="middle" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="19" font-weight="650">Synthetic Dataset</text>
+<text x="1055.0" y="1118" text-anchor="middle" fill="#e7d2a9" font-family="Inter,Arial,sans-serif" font-size="14">Reusable scenarios</text>
+</g>
+<g filter="url(#shadow)"><rect x="1210" y="1060" width="220" height="78" rx="15" fill="#443722" stroke="#b49360" stroke-width="2"/>
+<text x="1320.0" y="1091" text-anchor="middle" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="19" font-weight="650">Offline Evaluation</text>
+<text x="1320.0" y="1118" text-anchor="middle" fill="#e7d2a9" font-family="Inter,Arial,sans-serif" font-size="14">Routing policy analysis</text>
+</g>
+<g filter="url(#shadow)"><rect x="1480" y="1060" width="190" height="78" rx="15" fill="#443722" stroke="#b49360" stroke-width="2"/>
+<text x="1575.0" y="1091" text-anchor="middle" fill="#f4f7fb" font-family="Inter,Arial,sans-serif" font-size="19" font-weight="650">Reports</text>
+<text x="1575.0" y="1118" text-anchor="middle" fill="#e7d2a9" font-family="Inter,Arial,sans-serif" font-size="14">Quality · cost · latency</text>
+</g>
+<polyline points="1160,1099 1210,1099" fill="none" stroke="#c0a16d" stroke-width="3" marker-end="url(#arrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="1430,1099 1480,1099" fill="none" stroke="#c0a16d" stroke-width="3" marker-end="url(#arrow)" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="950" y="1168" fill="#c7b99f" font-family="Inter,Arial,sans-serif" font-size="13">Empirical runs are explicit and may incur provider charges.</text>
+<text x="90" y="1230" fill="#778ba4" font-family="Inter,Arial,sans-serif" font-size="13">Solid arrows = runtime flow  ·  Dashed arrows = optional feedback or caller-recorded metrics  ·  No persistent execution history.</text>
+</svg>
